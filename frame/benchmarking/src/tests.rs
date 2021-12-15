@@ -129,7 +129,7 @@ fn new_test_ext() -> sp_io::TestExternalities {
 
 mod benchmarks {
 	use super::{new_test_ext, pallet_test::Value, Test};
-	use crate::{account, BenchmarkError, BenchmarkParameter, BenchmarkResult, BenchmarkingSetup};
+	use crate::{account, BenchmarkErrorFoo, BenchmarkParameter, BenchmarkResult, BenchmarkingSetup};
 	use frame_support::{assert_err, assert_ok, ensure, traits::Get};
 	use frame_system::RawOrigin;
 	use sp_std::prelude::*;
@@ -213,7 +213,7 @@ mod benchmarks {
 			let b in 1 .. 1000;
 			let caller = account::<T::AccountId>("caller", 0, 0);
 		}: {
-			Err(BenchmarkError::Override(
+			Err(BenchmarkErrorFoo::Override(
 				BenchmarkResult {
 					extrinsic_time: 1_234_567_890,
 					reads: 1337,
@@ -224,7 +224,7 @@ mod benchmarks {
 		}
 
 		skip_benchmark {
-			let value = T::MaybeItem::get().ok_or(BenchmarkError::Skip)?;
+			let value = T::MaybeItem::get().ok_or(BenchmarkErrorFoo::Skip)?;
 		}: {
 			// This should never be reached.
 			assert!(value > 100);
@@ -331,7 +331,7 @@ mod benchmarks {
 
 		new_test_ext().execute_with(|| {
 			let result = closure();
-			assert!(matches!(result, Err(BenchmarkError::Override(_))));
+			assert!(matches!(result, Err(BenchmarkErrorFoo::Override(_))));
 		});
 	}
 
@@ -347,9 +347,9 @@ mod benchmarks {
 			assert_ok!(Pallet::<Test>::test_benchmark_variable_components());
 			assert!(matches!(
 				Pallet::<Test>::test_benchmark_override_benchmark(),
-				Err(BenchmarkError::Override(_)),
+				Err(BenchmarkErrorFoo::Override(_)),
 			));
-			assert_eq!(Pallet::<Test>::test_benchmark_skip_benchmark(), Err(BenchmarkError::Skip),);
+			assert_eq!(Pallet::<Test>::test_benchmark_skip_benchmark(), Err(BenchmarkErrorFoo::Skip),);
 		});
 	}
 }

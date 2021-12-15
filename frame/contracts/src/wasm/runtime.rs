@@ -21,6 +21,7 @@ use crate::{
 	exec::{ExecError, ExecResult, Ext, StorageKey, TopicOf},
 	gas::{ChargedAmount, Token},
 	schedule::HostFnWeights,
+	storage::WriteOutcome,
 	wasm::env_def::ConvertibleToWasm,
 	BalanceOf, CodeHash, Config, Error,
 };
@@ -632,6 +633,46 @@ where
 		}
 	}
 
+	/// Extracts the size of the overwritten value or `u32::MAX`.
+	fn overwritten_len(outcome: WriteOutcome) -> u32 {
+		match outcome {
+			// We cannot use `0` as sentinel value because there could be a zero sized
+			// storage entry which is different from a non existing one.
+			WriteOutcome::New => u32::MAX,
+			WriteOutcome::Overwritten(len) => len,
+			WriteOutcome::Taken(value) => value.len() as u32,
+		}
+	}
+
+	fn set_storage(
+		&mut self,
+		key_ptr: u32,
+		value_ptr: u32,
+		value_len: u32,
+	) -> Result<u32, TrapReason> {
+		self.charge_gas(RuntimeCosts::SetStorage(value_len))?;
+		if value_len > self.ext.max_value_size() {
+			Err(Error::<E::T>::ValueTooLarge)?;
+		}
+		let mut key: StorageKey = [0; 32];
+		self.read_sandbox_memory_into_buf(key_ptr, &mut key)?;
+		let value = Some(self.read_sandbox_memory(value_ptr, value_len)?);
+		self.ext
+			.set_storage(key, value, false)
+			.map(Self::overwritten_len)
+			.map_err(Into::into)
+	}
+
+	fn clear_storage(&mut self, key_ptr: u32) -> Result<u32, TrapReason> {
+		self.charge_gas(RuntimeCosts::ClearStorage)?;
+		let mut key: StorageKey = [0; 32];
+		self.read_sandbox_memory_into_buf(key_ptr, &mut key)?;
+		self.ext
+			.set_storage(key, None, false)
+			.map(Self::overwritten_len)
+			.map_err(Into::into)
+	}
+
 	fn call(
 		&mut self,
 		flags: CallFlags,
@@ -747,8 +788,16 @@ define_env!(Env, <E: Ext>,
 
 	// Set the value at the given key in the contract storage.
 	//
+	// Equivalent to the newer version of `seal_set_storage` with the exception of the return
+	// type. Still a valid thing to call when not interested in the return value.
+	[seal0] seal_set_storage(ctx, key_ptr: u32, value_ptr: u32, value_len: u32) => {
+		ctx.set_storage(key_ptr, value_ptr, value_len).map(|_| ())
+	},
+
+	// Set the value at the given key in the contract storage.
+	//
 	// The value length must not exceed the maximum defined by the contracts module parameters.
-	// Storing an empty value is disallowed.
+	// Specifying a `value_len` of zero will store an empty value.
 	//
 	// # Parameters
 	//
@@ -756,19 +805,20 @@ define_env!(Env, <E: Ext>,
 	// - `value_ptr`: pointer into the linear memory where the value to set is placed.
 	// - `value_len`: the length of the value in bytes.
 	//
-	// # Traps
+	// # Return Value
 	//
-	// - If value length exceeds the configured maximum value length of a storage entry.
-	// - Upon trying to set an empty storage entry (value length is 0).
-	[seal0] seal_set_storage(ctx, key_ptr: u32, value_ptr: u32, value_len: u32) => {
-		ctx.charge_gas(RuntimeCosts::SetStorage(value_len))?;
-		if value_len > ctx.ext.max_value_size() {
-			Err(Error::<E::T>::ValueTooLarge)?;
-		}
-		let mut key: StorageKey = [0; 32];
-		ctx.read_sandbox_memory_into_buf(key_ptr, &mut key)?;
-		let value = Some(ctx.read_sandbox_memory(value_ptr, value_len)?);
-		ctx.ext.set_storage(key, value).map_err(Into::into)
+	// Returns the size of the pre-existing value at the specified key if any. Otherwise
+	// `u32::MAX` is returned as a sentinel value.
+	[__unstable__] seal_set_storage(ctx, key_ptr: u32, value_ptr: u32, value_len: u32) -> u32 => {
+		ctx.set_storage(key_ptr, value_ptr, value_len)
+	},
+
+	// Clear the value at the given key in the contract storage.
+	//
+	// Equivalent to the newer version of `seal_clear_storage` with the exception of the return
+	// type. Still a valid thing to call when not interested in the return value.
+	[seal0] seal_clear_storage(ctx, key_ptr: u32) => {
+		ctx.clear_storage(key_ptr).map(|_| ()).map_err(Into::into)
 	},
 
 	// Clear the value at the given key in the contract storage.
@@ -776,11 +826,13 @@ define_env!(Env, <E: Ext>,
 	// # Parameters
 	//
 	// - `key_ptr`: pointer into the linear memory where the location to clear the value is placed.
-	[seal0] seal_clear_storage(ctx, key_ptr: u32) => {
-		ctx.charge_gas(RuntimeCosts::ClearStorage)?;
-		let mut key: StorageKey = [0; 32];
-		ctx.read_sandbox_memory_into_buf(key_ptr, &mut key)?;
-		ctx.ext.set_storage(key, None).map_err(Into::into)
+	//
+	// # Return Value
+	//
+	// Returns the size of the pre-existing value at the specified key if any. Otherwise
+	// `u32::MAX` is returned as a sentinel value.
+	[__unstable__] seal_clear_storage(ctx, key_ptr: u32) -> u32 => {
+		ctx.clear_storage(key_ptr).map_err(Into::into)
 	},
 
 	// Retrieve the value under the given key from storage.
@@ -804,6 +856,32 @@ define_env!(Env, <E: Ext>,
 		ctx.read_sandbox_memory_into_buf(key_ptr, &mut key)?;
 		if let Some(value) = ctx.ext.get_storage(&key) {
 			ctx.write_sandbox_output(out_ptr, out_len_ptr, &value, true, |len| {
+				Some(RuntimeCosts::GetStorageCopyOut(len))
+			})?;
+			Ok(ReturnCode::Success)
+		} else {
+			Ok(ReturnCode::KeyNotFound)
+		}
+	},
+
+	// Retrieve and remove the value under the given key from storage.
+	//
+	// # Parameters
+	//
+	// - `key_ptr`: pointer into the linear memory where the key of the requested value is placed.
+	// - `out_ptr`: pointer to the linear memory where the value is written to.
+	// - `out_len_ptr`: in-out pointer into linear memory where the buffer length
+	//   is read from and the value length is written to.
+	//
+	// # Errors
+	//
+	// `ReturnCode::KeyNotFound`
+	[__unstable__] seal_take_storage(ctx, key_ptr: u32, out_ptr: u32, out_len_ptr: u32) -> ReturnCode => {
+		ctx.charge_gas(RuntimeCosts::GetStorageBase)?;
+		let mut key: StorageKey = [0; 32];
+		ctx.read_sandbox_memory_into_buf(key_ptr, &mut key)?;
+		if let WriteOutcome::Taken(value) = ctx.ext.set_storage(key, None, true)? {
+			ctx.write_sandbox_output(out_ptr, out_len_ptr, &value, false, |len| {
 				Some(RuntimeCosts::GetStorageCopyOut(len))
 			})?;
 			Ok(ReturnCode::Success)

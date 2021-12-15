@@ -792,6 +792,9 @@ define_env!(Env, <E: Ext>,
 	// - `out_len_ptr`: in-out pointer into linear memory where the buffer length
 	//   is read from and the value length is written to.
 	//
+	// The copy of the the storage value can be skipped by supplying the sentinel value
+	// of `u32::MAX` to `out_ptr`. This can be used to check for existence of a value.
+	//
 	// # Errors
 	//
 	// `ReturnCode::KeyNotFound`
@@ -800,7 +803,7 @@ define_env!(Env, <E: Ext>,
 		let mut key: StorageKey = [0; 32];
 		ctx.read_sandbox_memory_into_buf(key_ptr, &mut key)?;
 		if let Some(value) = ctx.ext.get_storage(&key) {
-			ctx.write_sandbox_output(out_ptr, out_len_ptr, &value, false, |len| {
+			ctx.write_sandbox_output(out_ptr, out_len_ptr, &value, true, |len| {
 				Some(RuntimeCosts::GetStorageCopyOut(len))
 			})?;
 			Ok(ReturnCode::Success)

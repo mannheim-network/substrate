@@ -20,11 +20,11 @@
 
 pub mod error;
 
-use self::error::{FutureResult, Result};
 use jsonrpc_core::Result as RpcResult;
 use jsonrpc_derive::rpc;
 use jsonrpc_pubsub::{typed::Subscriber, SubscriptionId};
-use sp_rpc::{list::ListOrValue, number::NumberOrHex};
+use sp_rpc::{number::NumberOrHex, list::ListOrValue};
+use self::error::{FutureResult, Result};
 
 pub use self::gen_client::Client as ChainClient;
 

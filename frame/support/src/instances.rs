@@ -31,6 +31,10 @@
 //! NOTE: [`frame_support::pallet`] will reexport them inside the module, in order to make them
 //! accessible to [`frame_support::construct_runtime`].
 
+/// Instance0 to be used for instantiable pallet define with `pallet` macro.
+#[derive(Clone, Copy, PartialEq, Eq, crate::RuntimeDebugNoBound)]
+pub struct Instance0;
+
 /// Instance1 to be used for instantiable pallet define with `pallet` macro.
 #[derive(Clone, Copy, PartialEq, Eq, crate::RuntimeDebugNoBound)]
 pub struct Instance1;
@@ -90,7 +94,3 @@ pub struct Instance14;
 /// Instance15 to be used for instantiable pallet define with `pallet` macro.
 #[derive(Clone, Copy, PartialEq, Eq, crate::RuntimeDebugNoBound)]
 pub struct Instance15;
-
-/// Instance16 to be used for instantiable pallet define with `pallet` macro.
-#[derive(Clone, Copy, PartialEq, Eq, crate::RuntimeDebugNoBound)]
-pub struct Instance16;

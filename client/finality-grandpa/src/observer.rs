@@ -16,35 +16,32 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{
-	marker::{PhantomData, Unpin},
-	pin::Pin,
-	sync::Arc,
-	task::{Context, Poll},
-};
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::{Context, Poll};
 
-use finality_grandpa::{voter, voter_set::VoterSet, BlockNumberOps, Error as GrandpaError};
 use futures::prelude::*;
-use log::{debug, info, warn};
 
-use sc_client_api::backend::Backend;
-use sc_telemetry::TelemetryHandle;
-use sc_utils::mpsc::TracingUnboundedReceiver;
-use sp_blockchain::HeaderMetadata;
-use sp_consensus::SelectChain;
-use sp_finality_grandpa::AuthorityId;
+use finality_grandpa::{
+	BlockNumberOps, Error as GrandpaError, voter, voter_set::VoterSet
+};
+use log::{debug, info, warn};
 use sp_keystore::SyncCryptoStorePtr;
-use sp_runtime::traits::{Block as BlockT, NumberFor};
+use sp_consensus::SelectChain;
+use sc_client_api::backend::Backend;
+use sp_utils::mpsc::TracingUnboundedReceiver;
+use sp_runtime::traits::{NumberFor, Block as BlockT};
+use sp_blockchain::HeaderMetadata;
 
 use crate::{
-	authorities::SharedAuthoritySet,
-	aux_schema::PersistentData,
-	communication::{Network as NetworkT, NetworkBridge},
-	environment, global_communication,
-	notification::GrandpaJustificationSender,
-	ClientForGrandpa, CommandOrError, CommunicationIn, Config, Error, LinkHalf, VoterCommand,
-	VoterSetState,
+	global_communication, CommandOrError, CommunicationIn, Config, environment,
+	LinkHalf, Error, aux_schema::PersistentData, VoterCommand, VoterSetState,
 };
+use crate::authorities::SharedAuthoritySet;
+use crate::communication::{Network as NetworkT, NetworkBridge};
+use crate::notification::GrandpaJustificationSender;
+use sp_finality_grandpa::AuthorityId;
+use std::marker::{PhantomData, Unpin};
 
 struct ObserverChain<'a, Block: BlockT, Client> {
 	client: &'a Arc<Client>,
@@ -52,18 +49,18 @@ struct ObserverChain<'a, Block: BlockT, Client> {
 }
 
 impl<'a, Block, Client> finality_grandpa::Chain<Block::Hash, NumberFor<Block>>
-	for ObserverChain<'a, Block, Client>
-where
-	Block: BlockT,
-	Client: HeaderMetadata<Block, Error = sp_blockchain::Error>,
-	NumberFor<Block>: BlockNumberOps,
+	for ObserverChain<'a, Block, Client> where
+		Block: BlockT,
+		Client: HeaderMetadata<Block, Error = sp_blockchain::Error>,
+		NumberFor<Block>: BlockNumberOps,
 {
-	fn ancestry(
-		&self,
-		base: Block::Hash,
-		block: Block::Hash,
-	) -> Result<Vec<Block::Hash>, GrandpaError> {
+	fn ancestry(&self, base: Block::Hash, block: Block::Hash) -> Result<Vec<Block::Hash>, GrandpaError> {
 		environment::ancestry(&self.client, base, block)
+	}
+
+	fn best_chain_containing(&self, _block: Block::Hash) -> Option<(Block::Hash, NumberFor<Block>)> {
+		// only used by voter
+		None
 	}
 }
 
@@ -75,14 +72,13 @@ fn grandpa_observer<BE, Block: BlockT, Client, S, F>(
 	last_finalized_number: NumberFor<Block>,
 	commits: S,
 	note_round: F,
-	telemetry: Option<TelemetryHandle>,
 ) -> impl Future<Output = Result<(), CommandOrError<Block::Hash, NumberFor<Block>>>>
 where
 	NumberFor<Block>: BlockNumberOps,
 	S: Stream<Item = Result<CommunicationIn<Block>, CommandOrError<Block::Hash, NumberFor<Block>>>>,
 	F: Fn(u64),
 	BE: Backend<Block>,
-	Client: ClientForGrandpa<Block, BE>,
+	Client: crate::ClientForGrandpa<Block, BE>,
 {
 	let authority_set = authority_set.clone();
 	let client = client.clone();
@@ -97,14 +93,14 @@ where
 			},
 			voter::CommunicationIn::CatchUp(..) => {
 				// ignore catch up messages
-				return future::ok(last_finalized_number)
+				return future::ok(last_finalized_number);
 			},
 		};
 
 		// if the commit we've received targets a block lower or equal to the last
 		// finalized, ignore it and continue with the current state
 		if commit.target_number <= last_finalized_number {
-			return future::ok(last_finalized_number)
+			return future::ok(last_finalized_number);
 		}
 
 		let validation_result = match finality_grandpa::validate_commit(
@@ -130,7 +126,6 @@ where
 				(round, commit).into(),
 				false,
 				justification_sender.as_ref(),
-				telemetry.clone(),
 			) {
 				Ok(_) => {},
 				Err(e) => return future::err(e),
@@ -163,24 +158,25 @@ where
 /// already been instantiated with `block_import`.
 /// NOTE: this is currently not part of the crate's public API since we don't consider
 /// it stable enough to use on a live network.
+#[allow(unused)]
 pub fn run_grandpa_observer<BE, Block: BlockT, Client, N, SC>(
 	config: Config,
 	link: LinkHalf<Block, Client, SC>,
 	network: N,
-) -> sp_blockchain::Result<impl Future<Output = ()> + Send>
+) -> sp_blockchain::Result<impl Future<Output = ()> + Unpin + Send + 'static>
 where
 	BE: Backend<Block> + Unpin + 'static,
-	N: NetworkT<Block>,
-	SC: SelectChain<Block>,
+	N: NetworkT<Block> + Send + Clone + 'static,
+	SC: SelectChain<Block> + 'static,
 	NumberFor<Block>: BlockNumberOps,
-	Client: ClientForGrandpa<Block, BE> + 'static,
+	Client: crate::ClientForGrandpa<Block, BE> + 'static,
 {
 	let LinkHalf {
 		client,
+		select_chain: _,
 		persistent_data,
 		voter_commands_rx,
 		justification_sender,
-		telemetry,
 		..
 	} = link;
 
@@ -189,22 +185,22 @@ where
 		config.clone(),
 		persistent_data.set_state.clone(),
 		None,
-		telemetry.clone(),
 	);
 
 	let observer_work = ObserverWork::new(
-		client.clone(),
+		client,
 		network,
 		persistent_data,
 		config.keystore,
 		voter_commands_rx,
 		Some(justification_sender),
-		telemetry.clone(),
 	);
 
-	let observer_work = observer_work.map_ok(|_| ()).map_err(|e| {
-		warn!("GRANDPA Observer failed: {:?}", e);
-	});
+	let observer_work = observer_work
+		.map_ok(|_| ())
+		.map_err(|e| {
+			warn!("GRANDPA Observer failed: {:?}", e);
+		});
 
 	Ok(observer_work.map(drop))
 }
@@ -212,15 +208,13 @@ where
 /// Future that powers the observer.
 #[must_use]
 struct ObserverWork<B: BlockT, BE, Client, N: NetworkT<B>> {
-	observer:
-		Pin<Box<dyn Future<Output = Result<(), CommandOrError<B::Hash, NumberFor<B>>>> + Send>>,
+	observer: Pin<Box<dyn Future<Output = Result<(), CommandOrError<B::Hash, NumberFor<B>>>> + Send>>,
 	client: Arc<Client>,
 	network: NetworkBridge<B, N>,
 	persistent_data: PersistentData<B>,
 	keystore: Option<SyncCryptoStorePtr>,
 	voter_commands_rx: TracingUnboundedReceiver<VoterCommand<B::Hash, NumberFor<B>>>,
 	justification_sender: Option<GrandpaJustificationSender<B>>,
-	telemetry: Option<TelemetryHandle>,
 	_phantom: PhantomData<BE>,
 }
 
@@ -228,7 +222,7 @@ impl<B, BE, Client, Network> ObserverWork<B, BE, Client, Network>
 where
 	B: BlockT,
 	BE: Backend<B> + 'static,
-	Client: ClientForGrandpa<B, BE> + 'static,
+	Client: crate::ClientForGrandpa<B, BE> + 'static,
 	Network: NetworkT<B>,
 	NumberFor<B>: BlockNumberOps,
 {
@@ -239,8 +233,8 @@ where
 		keystore: Option<SyncCryptoStorePtr>,
 		voter_commands_rx: TracingUnboundedReceiver<VoterCommand<B::Hash, NumberFor<B>>>,
 		justification_sender: Option<GrandpaJustificationSender<B>>,
-		telemetry: Option<TelemetryHandle>,
 	) -> Self {
+
 		let mut work = ObserverWork {
 			// `observer` is set to a temporary value and replaced below when
 			// calling `rebuild_observer`.
@@ -251,7 +245,6 @@ where
 			keystore: keystore.clone(),
 			voter_commands_rx,
 			justification_sender,
-			telemetry,
 			_phantom: PhantomData,
 		};
 		work.rebuild_observer();
@@ -285,13 +278,11 @@ where
 			let network = self.network.clone();
 			let voters = voters.clone();
 
-			move |round| {
-				network.note_round(
-					crate::communication::Round(round),
-					crate::communication::SetId(set_id),
-					&*voters,
-				)
-			}
+			move |round| network.note_round(
+				crate::communication::Round(round),
+				crate::communication::SetId(set_id),
+				&*voters,
+			)
 		};
 
 		// create observer for the current set
@@ -303,7 +294,6 @@ where
 			last_finalized_number,
 			global_in,
 			note_round,
-			self.telemetry.clone(),
 		);
 
 		self.observer = Box::pin(observer);
@@ -331,7 +321,7 @@ where
 				// set changed (not where the signal happened!) as the base.
 				let set_state = VoterSetState::live(
 					new.set_id,
-					&*self.persistent_data.authority_set.inner(),
+					&*self.persistent_data.authority_set.inner().read(),
 					(new.canon_hash, new.canon_number),
 				);
 
@@ -339,8 +329,7 @@ where
 
 				set_state
 			},
-		}
-		.into();
+		}.into();
 
 		self.rebuild_observer();
 		Ok(())
@@ -351,7 +340,7 @@ impl<B, BE, C, N> Future for ObserverWork<B, BE, C, N>
 where
 	B: BlockT,
 	BE: Backend<B> + Unpin + 'static,
-	C: ClientForGrandpa<B, BE> + 'static,
+	C: crate::ClientForGrandpa<B, BE> + 'static,
 	N: NetworkT<B>,
 	NumberFor<B>: BlockNumberOps,
 {
@@ -359,34 +348,33 @@ where
 
 	fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
 		match Future::poll(Pin::new(&mut self.observer), cx) {
-			Poll::Pending => {},
+			Poll::Pending => {}
 			Poll::Ready(Ok(())) => {
-				// observer commit stream doesn't conclude naturally; this could reasonably be an
-				// error.
+				// observer commit stream doesn't conclude naturally; this could reasonably be an error.
 				return Poll::Ready(Ok(()))
-			},
+			}
 			Poll::Ready(Err(CommandOrError::Error(e))) => {
 				// return inner observer error
 				return Poll::Ready(Err(e))
-			},
+			}
 			Poll::Ready(Err(CommandOrError::VoterCommand(command))) => {
 				// some command issued internally
 				self.handle_voter_command(command)?;
 				cx.waker().wake_by_ref();
-			},
+			}
 		}
 
 		match Stream::poll_next(Pin::new(&mut self.voter_commands_rx), cx) {
-			Poll::Pending => {},
+			Poll::Pending => {}
 			Poll::Ready(None) => {
 				// the `voter_commands_rx` stream should never conclude since it's never closed.
 				return Poll::Ready(Ok(()))
-			},
+			}
 			Poll::Ready(Some(command)) => {
 				// some command issued externally
 				self.handle_voter_command(command)?;
 				cx.waker().wake_by_ref();
-			},
+			}
 		}
 
 		Future::poll(Pin::new(&mut self.network), cx)
@@ -397,15 +385,12 @@ where
 mod tests {
 	use super::*;
 
-	use crate::{
-		aux_schema,
-		communication::tests::{make_test_network, Event},
-	};
 	use assert_matches::assert_matches;
-	use sc_network::PeerId;
-	use sc_utils::mpsc::tracing_unbounded;
-	use sp_blockchain::HeaderBackend as _;
+	use sp_utils::mpsc::tracing_unbounded;
+	use crate::{aux_schema,	communication::tests::{Event, make_test_network}};
 	use substrate_test_runtime_client::{TestClientBuilder, TestClientBuilderExt};
+	use sc_network::PeerId;
+	use sp_blockchain::HeaderBackend as _;
 
 	use futures::executor;
 
@@ -433,9 +418,12 @@ mod tests {
 
 		let voters = vec![(sp_keyring::Ed25519Keyring::Alice.public().into(), 1)];
 
-		let persistent_data =
-			aux_schema::load_persistent(&*backend, client.info().genesis_hash, 0, || Ok(voters))
-				.unwrap();
+		let persistent_data = aux_schema::load_persistent(
+			&*backend,
+			client.info().genesis_hash,
+			0,
+			|| Ok(voters),
+		).unwrap();
 
 		let (_tx, voter_command_rx) = tracing_unbounded("");
 
@@ -445,7 +433,6 @@ mod tests {
 			persistent_data,
 			None,
 			voter_command_rx,
-			None,
 			None,
 		);
 

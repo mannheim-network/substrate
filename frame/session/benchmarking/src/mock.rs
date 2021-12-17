@@ -19,12 +19,8 @@
 
 #![cfg(test)]
 
-use frame_election_provider_support::onchain;
-use frame_support::{
-	parameter_types,
-	traits::{ConstU32, ConstU64},
-};
 use sp_runtime::traits::IdentityLookup;
+use frame_support::parameter_types;
 
 type AccountId = u64;
 type AccountIndex = u32;
@@ -40,15 +36,15 @@ frame_support::construct_runtime!(
 		NodeBlock = Block,
 		UncheckedExtrinsic = UncheckedExtrinsic,
 	{
-		System: frame_system::{Pallet, Call, Config, Storage, Event<T>},
-		Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
-		Staking: pallet_staking::{Pallet, Call, Config<T>, Storage, Event<T>},
-		Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
+		System: frame_system::{Module, Call, Config, Storage, Event<T>},
+		Balances: pallet_balances::{Module, Call, Storage, Config<T>, Event<T>},
+		Staking: pallet_staking::{Module, Call, Config<T>, Storage, Event<T>, ValidateUnsigned},
+		Session: pallet_session::{Module, Call, Storage, Event, Config<T>},
 	}
 );
 
 impl frame_system::Config for Test {
-	type BaseCallFilter = frame_support::traits::Everything;
+	type BaseCallFilter = ();
 	type BlockWeights = ();
 	type BlockLength = ();
 	type DbWeight = ();
@@ -70,16 +66,12 @@ impl frame_system::Config for Test {
 	type OnKilledAccount = ();
 	type SystemWeightInfo = ();
 	type SS58Prefix = ();
-	type OnSetCode = ();
-	type MaxConsumers = ConstU32<16>;
 }
 parameter_types! {
 	pub const ExistentialDeposit: Balance = 10;
 }
 impl pallet_balances::Config for Test {
 	type MaxLocks = ();
-	type MaxReserves = ();
-	type ReserveIdentifier = [u8; 8];
 	type Balance = Balance;
 	type Event = Event;
 	type DustRemoval = ();
@@ -88,10 +80,13 @@ impl pallet_balances::Config for Test {
 	type WeightInfo = ();
 }
 
+parameter_types! {
+	pub const MinimumPeriod: u64 = 5;
+}
 impl pallet_timestamp::Config for Test {
 	type Moment = u64;
 	type OnTimestampSet = ();
-	type MinimumPeriod = ConstU64<5>;
+	type MinimumPeriod = MinimumPeriod;
 	type WeightInfo = ();
 }
 impl pallet_session::historical::Config for Test {
@@ -115,10 +110,9 @@ impl pallet_session::SessionHandler<AccountId> for TestSessionHandler {
 		_: bool,
 		_: &[(AccountId, Ks)],
 		_: &[(AccountId, Ks)],
-	) {
-	}
+	) {}
 
-	fn on_disabled(_: u32) {}
+	fn on_disabled(_: usize) {}
 }
 
 impl pallet_session::Config for Test {
@@ -130,6 +124,7 @@ impl pallet_session::Config for Test {
 	type Event = Event;
 	type ValidatorId = AccountId;
 	type ValidatorIdOf = pallet_staking::StashOf<Test>;
+	type DisabledValidatorsThreshold = ();
 	type WeightInfo = ();
 }
 pallet_staking_reward_curve::build! {
@@ -144,27 +139,22 @@ pallet_staking_reward_curve::build! {
 }
 parameter_types! {
 	pub const RewardCurve: &'static sp_runtime::curve::PiecewiseLinear<'static> = &I_NPOS;
+	pub const MaxNominatorRewardedPerValidator: u32 = 64;
+	pub const UnsignedPriority: u64 = 1 << 20;
 }
 
 pub type Extrinsic = sp_runtime::testing::TestXt<Call, ()>;
 
-impl<C> frame_system::offchain::SendTransactionTypes<C> for Test
-where
+impl<C> frame_system::offchain::SendTransactionTypes<C> for Test where
 	Call: From<C>,
 {
 	type OverarchingCall = Call;
 	type Extrinsic = Extrinsic;
 }
 
-impl onchain::Config for Test {
-	type Accuracy = sp_runtime::Perbill;
-	type DataProvider = Staking;
-}
-
 impl pallet_staking::Config for Test {
-	const MAX_NOMINATIONS: u32 = 16;
 	type Currency = Balances;
-	type UnixTime = pallet_timestamp::Pallet<Self>;
+	type UnixTime = pallet_timestamp::Module<Self>;
 	type CurrencyToVote = frame_support::traits::SaturatingCurrencyToVote;
 	type RewardRemainder = ();
 	type Event = Event;
@@ -175,14 +165,15 @@ impl pallet_staking::Config for Test {
 	type SlashCancelOrigin = frame_system::EnsureRoot<Self::AccountId>;
 	type BondingDuration = ();
 	type SessionInterface = Self;
-	type EraPayout = pallet_staking::ConvertCurve<RewardCurve>;
+	type RewardCurve = RewardCurve;
 	type NextNewSession = Session;
-	type MaxNominatorRewardedPerValidator = ConstU32<64>;
-	type OffendingValidatorsThreshold = ();
-	type ElectionProvider = onchain::OnChainSequentialPhragmen<Self>;
-	type GenesisElectionProvider = Self::ElectionProvider;
-	type SortedListProvider = pallet_staking::UseNominatorsMap<Self>;
-	type BenchmarkingConfig = pallet_staking::TestBenchmarkingConfig;
+	type ElectionLookahead = ();
+	type Call = Call;
+	type MaxNominatorRewardedPerValidator = MaxNominatorRewardedPerValidator;
+	type UnsignedPriority = UnsignedPriority;
+	type MaxIterations = ();
+	type MinSolutionScoreBump = ();
+	type OffchainSolutionWeightLimit = ();
 	type WeightInfo = ();
 }
 

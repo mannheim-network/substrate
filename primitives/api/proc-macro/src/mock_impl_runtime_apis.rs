@@ -16,10 +16,10 @@
 // limitations under the License.
 
 use crate::utils::{
-	extract_block_type_from_trait_path, extract_impl_trait,
-	extract_parameter_names_types_and_borrows, generate_crate_access, generate_hidden_includes,
-	generate_method_runtime_api_impl_name, return_type_extract_type, AllowSelfRefInParameters,
-	RequireQualifiedTraitPath,
+	generate_crate_access, generate_hidden_includes,
+	generate_method_runtime_api_impl_name, extract_parameter_names_types_and_borrows,
+	return_type_extract_type, extract_block_type_from_trait_path, extract_impl_trait,
+	AllowSelfRefInParameters, RequireQualifiedTraitPath,
 };
 
 use proc_macro2::{Span, TokenStream};
@@ -27,11 +27,8 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 
 use syn::{
-	fold::{self, Fold},
-	parse::{Error, Parse, ParseStream, Result},
-	parse_macro_input, parse_quote,
-	spanned::Spanned,
-	Attribute, Ident, ItemImpl, Pat, Type, TypePath,
+	spanned::Spanned, parse_macro_input, Ident, Type, ItemImpl, ImplItem, TypePath, parse_quote,
+	parse::{Parse, ParseStream, Result, Error}, fold::{self, Fold}, Attribute, Pat,
 };
 
 /// Unique identifier used to make the hidden includes unique for this macro.
@@ -64,11 +61,29 @@ impl Parse for RuntimeApiImpls {
 	}
 }
 
-/// Implement the `ApiExt` trait and the `Core` runtime api.
-fn implement_common_api_traits(block_type: TypePath, self_ty: Type) -> Result<TokenStream> {
+/// Implement the `ApiExt` trait, `ApiErrorExt` trait and the `Core` runtime api.
+fn implement_common_api_traits(
+	error_type: Option<Type>,
+	block_type: TypePath,
+	self_ty: Type,
+) -> Result<TokenStream> {
 	let crate_ = generate_crate_access(HIDDEN_INCLUDES_ID);
 
+	let error_type = error_type
+		.map(|e| quote!(#e))
+		.unwrap_or_else(|| quote!( #crate_::ApiError ) );
+
+	// Quote using the span from `error_type` to generate nice error messages when the type is
+	// not implementing a trait or similar.
+	let api_error_ext = quote_spanned! { error_type.span() =>
+		impl #crate_::ApiErrorExt for #self_ty {
+			type Error = #error_type;
+		}
+	};
+
 	Ok(quote!(
+		#api_error_ext
+
 		impl #crate_::ApiExt<#block_type> for #self_ty {
 			type StateBackend = #crate_::InMemoryBackend<#crate_::HashFor<#block_type>>;
 
@@ -82,7 +97,7 @@ fn implement_common_api_traits(block_type: TypePath, self_ty: Type) -> Result<To
 			fn has_api<A: #crate_::RuntimeApiInfo + ?Sized>(
 				&self,
 				_: &#crate_::BlockId<#block_type>,
-			) -> std::result::Result<bool, #crate_::ApiError> where Self: Sized {
+			) -> std::result::Result<bool, #error_type> where Self: Sized {
 				Ok(true)
 			}
 
@@ -90,15 +105,8 @@ fn implement_common_api_traits(block_type: TypePath, self_ty: Type) -> Result<To
 				&self,
 				_: &#crate_::BlockId<#block_type>,
 				pred: P,
-			) -> std::result::Result<bool, #crate_::ApiError> where Self: Sized {
+			) -> std::result::Result<bool, #error_type> where Self: Sized {
 				Ok(pred(A::VERSION))
-			}
-
-			fn api_version<A: #crate_::RuntimeApiInfo + ?Sized>(
-				&self,
-				_: &#crate_::BlockId<#block_type>,
-			) -> std::result::Result<Option<u32>, #crate_::ApiError> where Self: Sized {
-				Ok(Some(A::VERSION))
 			}
 
 			fn record_proof(&mut self) {
@@ -109,13 +117,13 @@ fn implement_common_api_traits(block_type: TypePath, self_ty: Type) -> Result<To
 				unimplemented!("`extract_proof` not implemented for runtime api mocks")
 			}
 
-			fn proof_recorder(&self) -> Option<#crate_::ProofRecorder<#block_type>> {
-				unimplemented!("`proof_recorder` not implemented for runtime api mocks")
-			}
-
 			fn into_storage_changes(
 				&self,
 				_: &Self::StateBackend,
+				_: Option<&#crate_::ChangesTrieState<
+					#crate_::HashFor<#block_type>,
+					#crate_::NumberFor<#block_type>,
+				>>,
 				_: <#block_type as #crate_::BlockT>::Hash,
 			) -> std::result::Result<
 				#crate_::StorageChanges<Self::StateBackend, #block_type>,
@@ -132,7 +140,7 @@ fn implement_common_api_traits(block_type: TypePath, self_ty: Type) -> Result<To
 				_: #crate_::ExecutionContext,
 				_: Option<()>,
 				_: Vec<u8>,
-			) -> std::result::Result<#crate_::NativeOrEncoded<#crate_::RuntimeVersion>, #crate_::ApiError> {
+			) -> std::result::Result<#crate_::NativeOrEncoded<#crate_::RuntimeVersion>, #error_type> {
 				unimplemented!("Not required for testing!")
 			}
 
@@ -142,7 +150,7 @@ fn implement_common_api_traits(block_type: TypePath, self_ty: Type) -> Result<To
 				_: #crate_::ExecutionContext,
 				_: Option<#block_type>,
 				_: Vec<u8>,
-			) -> std::result::Result<#crate_::NativeOrEncoded<()>, #crate_::ApiError> {
+			) -> std::result::Result<#crate_::NativeOrEncoded<()>, #error_type> {
 				unimplemented!("Not required for testing!")
 			}
 
@@ -152,7 +160,7 @@ fn implement_common_api_traits(block_type: TypePath, self_ty: Type) -> Result<To
 				_: #crate_::ExecutionContext,
 				_: Option<&<#block_type as #crate_::BlockT>::Header>,
 				_: Vec<u8>,
-			) -> std::result::Result<#crate_::NativeOrEncoded<()>, #crate_::ApiError> {
+			) -> std::result::Result<#crate_::NativeOrEncoded<()>, #error_type> {
 				unimplemented!("Not required for testing!")
 			}
 		}
@@ -164,13 +172,11 @@ fn implement_common_api_traits(block_type: TypePath, self_ty: Type) -> Result<To
 /// If the attribute was found, it will be automatically removed from the vec.
 fn has_advanced_attribute(attributes: &mut Vec<Attribute>) -> bool {
 	let mut found = false;
-	attributes.retain(|attr| {
-		if attr.path.is_ident(ADVANCED_ATTRIBUTE) {
-			found = true;
-			false
-		} else {
-			true
-		}
+	attributes.retain(|attr| if attr.path.is_ident(ADVANCED_ATTRIBUTE) {
+		found = true;
+		false
+	} else {
+		true
 	});
 
 	found
@@ -212,7 +218,7 @@ fn get_at_param_name(
 		let name = param_names.remove(0);
 		Ok((quote!( #name ), ptype_and_borrows.0))
 	} else {
-		Ok((quote!(_), default_block_id_type.clone()))
+		Ok((quote!( _ ), default_block_id_type.clone()))
 	}
 }
 
@@ -224,6 +230,9 @@ struct FoldRuntimeApiImpl<'a> {
 	block_type: &'a TypePath,
 	/// The identifier of the trait being implemented.
 	impl_trait: &'a Ident,
+	/// Stores the error type that is being found in the trait implementation as associated type
+	/// with the name `Error`.
+	error_type: &'a mut Option<Type>,
 }
 
 impl<'a> Fold for FoldRuntimeApiImpl<'a> {
@@ -233,27 +242,24 @@ impl<'a> Fold for FoldRuntimeApiImpl<'a> {
 			let is_advanced = has_advanced_attribute(&mut input.attrs);
 			let mut errors = Vec::new();
 
-			let (mut param_names, mut param_types_and_borrows) =
-				match extract_parameter_names_types_and_borrows(
-					&input.sig,
-					AllowSelfRefInParameters::YesButIgnore,
-				) {
-					Ok(res) => (
-						res.iter().map(|v| v.0.clone()).collect::<Vec<_>>(),
-						res.iter()
-							.map(|v| {
-								let ty = &v.1;
-								let borrow = &v.2;
-								(quote_spanned!(ty.span() => #borrow #ty ), v.2.is_some())
-							})
-							.collect::<Vec<_>>(),
-					),
-					Err(e) => {
-						errors.push(e.to_compile_error());
+			let (mut param_names, mut param_types_and_borrows) = match extract_parameter_names_types_and_borrows(
+				&input.sig,
+				AllowSelfRefInParameters::YesButIgnore,
+			) {
+				Ok(res) => (
+					res.iter().map(|v| v.0.clone()).collect::<Vec<_>>(),
+					res.iter().map(|v| {
+						let ty = &v.1;
+						let borrow = &v.2;
+						(quote_spanned!(ty.span() => #borrow #ty ), v.2.is_some())
+					}).collect::<Vec<_>>(),
+				),
+				Err(e) => {
+					errors.push(e.to_compile_error());
 
-						(Default::default(), Default::default())
-					},
-				};
+					(Default::default(), Default::default())
+				}
+			};
 
 			let block_type = &self.block_type;
 			let block_id_type = quote!( &#crate_::BlockId<#block_type> );
@@ -268,8 +274,8 @@ impl<'a> Fold for FoldRuntimeApiImpl<'a> {
 				Ok(res) => res,
 				Err(e) => {
 					errors.push(e.to_compile_error());
-					(quote!(_), block_id_type)
-				},
+					(quote!( _ ), block_id_type)
+				}
 			};
 
 			let param_types = param_types_and_borrows.iter().map(|v| &v.0);
@@ -282,8 +288,10 @@ impl<'a> Fold for FoldRuntimeApiImpl<'a> {
 				_: Vec<u8>,
 			};
 
-			input.sig.ident =
-				generate_method_runtime_api_impl_name(&self.impl_trait, &input.sig.ident);
+			input.sig.ident = generate_method_runtime_api_impl_name(
+				&self.impl_trait,
+				&input.sig.ident,
+			);
 
 			// When using advanced, the user needs to declare the correct return type on its own,
 			// otherwise do it for the user.
@@ -292,7 +300,7 @@ impl<'a> Fold for FoldRuntimeApiImpl<'a> {
 
 				// Generate the correct return type.
 				input.sig.output = parse_quote!(
-					-> std::result::Result<#crate_::NativeOrEncoded<#ret_type>, #crate_::ApiError>
+					-> std::result::Result<#crate_::NativeOrEncoded<#ret_type>, Self::Error>
 				);
 			}
 
@@ -328,12 +336,51 @@ impl<'a> Fold for FoldRuntimeApiImpl<'a> {
 		input.block = block;
 		input
 	}
+
+	fn fold_impl_item(&mut self, input: ImplItem) -> ImplItem {
+		match input {
+			ImplItem::Type(ty) => {
+				if ty.ident == "Error" {
+					if let Some(error_type) = self.error_type {
+						if *error_type != ty.ty {
+							let mut error = Error::new(
+								ty.span(),
+								"Error type can not change between runtime apis",
+							);
+							let error_first = Error::new(
+								error_type.span(),
+								"First error type was declared here."
+							);
+
+							error.combine(error_first);
+
+							ImplItem::Verbatim(error.to_compile_error())
+						} else {
+							ImplItem::Verbatim(Default::default())
+						}
+					} else {
+						*self.error_type = Some(ty.ty);
+						ImplItem::Verbatim(Default::default())
+					}
+				} else {
+					let error = Error::new(
+						ty.span(),
+						"Only associated type with name `Error` is allowed",
+					);
+					ImplItem::Verbatim(error.to_compile_error())
+				}
+			},
+			o => fold::fold_impl_item(self, o),
+		}
+	}
 }
 
 /// Result of [`generate_runtime_api_impls`].
 struct GeneratedRuntimeApiImpls {
 	/// All the runtime api implementations.
 	impls: TokenStream,
+	/// The error type that should be used by the runtime apis.
+	error_type: Option<Type>,
 	/// The block type that is being used by the runtime apis.
 	block_type: TypePath,
 	/// The type the traits are implemented for.
@@ -346,6 +393,7 @@ struct GeneratedRuntimeApiImpls {
 /// extracts the error type, self type and the block type.
 fn generate_runtime_api_impls(impls: &[ItemImpl]) -> Result<GeneratedRuntimeApiImpls> {
 	let mut result = Vec::with_capacity(impls.len());
+	let mut error_type = None;
 	let mut global_block_type: Option<TypePath> = None;
 	let mut self_ty: Option<Box<Type>> = None;
 
@@ -359,24 +407,28 @@ fn generate_runtime_api_impls(impls: &[ItemImpl]) -> Result<GeneratedRuntimeApiI
 		let block_type = extract_block_type_from_trait_path(impl_trait_path)?;
 
 		self_ty = match self_ty.take() {
-			Some(self_ty) =>
+			Some(self_ty) => {
 				if self_ty == impl_.self_ty {
 					Some(self_ty)
 				} else {
-					let mut error = Error::new(
+					let mut error =Error::new(
 						impl_.self_ty.span(),
 						"Self type should not change between runtime apis",
 					);
 
-					error.combine(Error::new(self_ty.span(), "First self type found here"));
+					error.combine(Error::new(
+						self_ty.span(),
+						"First self type found here",
+					));
 
 					return Err(error)
-				},
+				}
+			},
 			None => Some(impl_.self_ty.clone()),
 		};
 
 		global_block_type = match global_block_type.take() {
-			Some(global_block_type) =>
+			Some(global_block_type) => {
 				if global_block_type == *block_type {
 					Some(global_block_type)
 				} else {
@@ -391,17 +443,23 @@ fn generate_runtime_api_impls(impls: &[ItemImpl]) -> Result<GeneratedRuntimeApiI
 					));
 
 					return Err(error)
-				},
+				}
+			},
 			None => Some(block_type.clone()),
 		};
 
-		let mut visitor = FoldRuntimeApiImpl { block_type, impl_trait: &impl_trait.ident };
+		let mut visitor = FoldRuntimeApiImpl {
+			block_type,
+			impl_trait: &impl_trait.ident,
+			error_type: &mut error_type,
+		};
 
 		result.push(visitor.fold_item_impl(impl_.clone()));
 	}
 
 	Ok(GeneratedRuntimeApiImpls {
 		impls: quote!( #( #result )* ),
+		error_type,
 		block_type: global_block_type.expect("There is a least one runtime api; qed"),
 		self_ty: *self_ty.expect("There is at least one runtime api; qed"),
 	})
@@ -412,16 +470,14 @@ pub fn mock_impl_runtime_apis_impl(input: proc_macro::TokenStream) -> proc_macro
 	// Parse all impl blocks
 	let RuntimeApiImpls { impls: api_impls } = parse_macro_input!(input as RuntimeApiImpls);
 
-	mock_impl_runtime_apis_impl_inner(&api_impls)
-		.unwrap_or_else(|e| e.to_compile_error())
-		.into()
+	mock_impl_runtime_apis_impl_inner(&api_impls).unwrap_or_else(|e| e.to_compile_error()).into()
 }
 
 fn mock_impl_runtime_apis_impl_inner(api_impls: &[ItemImpl]) -> Result<TokenStream> {
 	let hidden_includes = generate_hidden_includes(HIDDEN_INCLUDES_ID);
-	let GeneratedRuntimeApiImpls { impls, block_type, self_ty } =
+	let GeneratedRuntimeApiImpls { impls, error_type, block_type, self_ty } =
 		generate_runtime_api_impls(api_impls)?;
-	let api_traits = implement_common_api_traits(block_type, self_ty)?;
+	let api_traits = implement_common_api_traits(error_type, block_type, self_ty)?;
 
 	Ok(quote!(
 		#hidden_includes

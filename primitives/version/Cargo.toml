@@ -1,10 +1,10 @@
 [package]
 name = "sp-version"
-version = "4.0.0-dev"
+version = "3.0.0"
 authors = ["Parity Technologies <admin@parity.io>"]
-edition = "2021"
+edition = "2018"
 license = "Apache-2.0"
-homepage = "https://substrate.io"
+homepage = "https://substrate.dev"
 repository = "https://github.com/paritytech/substrate/"
 description = "Version module for the Substrate runtime; Provides a function that returns the runtime version."
 documentation = "https://docs.rs/sp-version"
@@ -13,16 +13,13 @@ readme = "README.md"
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
+
 [dependencies]
 impl-serde = { version = "0.3.1", optional = true }
-serde = { version = "1.0.126", optional = true, features = ["derive"] }
+serde = { version = "1.0.101", optional = true, features = ["derive"] }
 codec = { package = "parity-scale-codec", version = "2.0.0", default-features = false, features = ["derive"] }
-scale-info = { version = "1.0", default-features = false, features = ["derive"] }
-sp-std = { version = "4.0.0", default-features = false, path = "../std" }
-sp-runtime = { version = "4.0.0", default-features = false, path = "../runtime" }
-sp-version-proc-macro = { version = "4.0.0-dev", default-features = false, path = "proc-macro" }
-parity-wasm = { version = "0.42.2", optional = true }
-thiserror = { version = "1.0.30", optional = true }
+sp-std = { version = "3.0.0", default-features = false, path = "../std" }
+sp-runtime = { version = "3.0.0", default-features = false, path = "../runtime" }
 
 [features]
 default = ["std"]
@@ -30,9 +27,6 @@ std = [
 	"impl-serde",
 	"serde",
 	"codec/std",
-	"scale-info/std",
 	"sp-std/std",
 	"sp-runtime/std",
-	"parity-wasm",
-	"thiserror",
 ]

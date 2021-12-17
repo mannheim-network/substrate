@@ -18,13 +18,13 @@
 
 //! Trie benchmark (integrated).
 
-use hash_db::Prefix;
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 use kvdb::KeyValueDB;
 use lazy_static::lazy_static;
 use rand::Rng;
+use hash_db::Prefix;
 use sp_state_machine::Backend as _;
 use sp_trie::{trie_types::TrieDBMut, TrieMut as _};
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use node_primitives::Hash;
 
@@ -32,7 +32,7 @@ use crate::{
 	core::{self, Mode, Path},
 	generator::generate_trie,
 	simple_trie::SimpleTrie,
-	tempdb::{DatabaseType, TempDatabase},
+	tempdb::{TempDatabase, DatabaseType},
 };
 
 pub const SAMPLE_SIZE: usize = 100;
@@ -142,7 +142,10 @@ impl core::BenchmarkDescription for TrieReadBenchmarkDescription {
 		assert_eq!(warmup_keys.len(), SAMPLE_SIZE);
 		assert_eq!(query_keys.len(), SAMPLE_SIZE);
 
-		let root = generate_trie(database.open(self.database_type), key_values);
+		let root = generate_trie(
+			database.open(self.database_type),
+			key_values,
+		);
 
 		Box::new(TrieReadBenchmark {
 			database,
@@ -159,8 +162,7 @@ impl core::BenchmarkDescription for TrieReadBenchmarkDescription {
 			self.database_size,
 			pretty_print(self.database_size.keys()),
 			self.database_type,
-		)
-		.into()
+		).into()
 	}
 }
 
@@ -180,10 +182,12 @@ impl core::Benchmark for TrieReadBenchmark {
 		let storage: Arc<dyn sp_state_machine::Storage<sp_core::Blake2Hasher>> =
 			Arc::new(Storage(db.open(self.database_type)));
 
-		let trie_backend = sp_state_machine::TrieBackend::new(storage, self.root);
+		let trie_backend = sp_state_machine::TrieBackend::new(
+			storage,
+			self.root,
+		);
 		for (warmup_key, warmup_value) in self.warmup_keys.iter() {
-			let value = trie_backend
-				.storage(&warmup_key[..])
+			let value = trie_backend.storage(&warmup_key[..])
 				.expect("Failed to get key: db error")
 				.expect("Warmup key should exist");
 
@@ -213,6 +217,7 @@ pub struct TrieWriteBenchmarkDescription {
 	pub database_size: DatabaseSize,
 	pub database_type: DatabaseType,
 }
+
 
 impl core::BenchmarkDescription for TrieWriteBenchmarkDescription {
 	fn path(&self) -> Path {
@@ -248,7 +253,10 @@ impl core::BenchmarkDescription for TrieWriteBenchmarkDescription {
 
 		assert_eq!(warmup_keys.len(), SAMPLE_SIZE);
 
-		let root = generate_trie(database.open(self.database_type), key_values);
+		let root = generate_trie(
+			database.open(self.database_type),
+			key_values,
+		);
 
 		Box::new(TrieWriteBenchmark {
 			database,
@@ -264,8 +272,7 @@ impl core::BenchmarkDescription for TrieWriteBenchmarkDescription {
 			self.database_size,
 			pretty_print(self.database_size.keys()),
 			self.database_type,
-		)
-		.into()
+		).into()
 	}
 }
 
@@ -285,13 +292,15 @@ impl core::Benchmark for TrieWriteBenchmark {
 		let mut new_root = self.root.clone();
 
 		let mut overlay = HashMap::new();
-		let mut trie = SimpleTrie { db: kvdb.clone(), overlay: &mut overlay };
-		let mut trie_db_mut =
-			TrieDBMut::from_existing(&mut trie, &mut new_root).expect("Failed to create TrieDBMut");
+		let mut trie = SimpleTrie {
+			db: kvdb.clone(),
+			overlay: &mut overlay,
+		};
+		let mut trie_db_mut = TrieDBMut::from_existing(&mut trie, &mut new_root)
+			.expect("Failed to create TrieDBMut");
 
 		for (warmup_key, warmup_value) in self.warmup_keys.iter() {
-			let value = trie_db_mut
-				.get(&warmup_key[..])
+			let value = trie_db_mut.get(&warmup_key[..])
 				.expect("Failed to get key: db error")
 				.expect("Warmup key should exist");
 
@@ -358,9 +367,7 @@ impl SizePool {
 
 	fn value<R: Rng>(&self, rng: &mut R) -> Vec<u8> {
 		let sr = (rng.next_u64() % self.total as u64) as u32;
-		let mut range = self
-			.distribution
-			.range((std::ops::Bound::Included(sr), std::ops::Bound::Unbounded));
+		let mut range = self.distribution.range((std::ops::Bound::Included(sr), std::ops::Bound::Unbounded));
 		let size = *range.next().unwrap().1 as usize;
 		random_vec(rng, size)
 	}

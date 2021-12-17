@@ -18,7 +18,7 @@
 
 //! Transaction pool error.
 
-use sc_transaction_pool_api::error::Error as TxPoolError;
+use sp_transaction_pool::error::Error as TxPoolError;
 
 /// Transaction pool result.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -40,7 +40,8 @@ pub enum Error {
 	RuntimeApi(String),
 }
 
-impl sc_transaction_pool_api::error::IntoPoolError for Error {
+
+impl sp_transaction_pool::error::IntoPoolError for Error {
 	fn into_pool_error(self) -> std::result::Result<TxPoolError, Self> {
 		match self {
 			Error::Pool(e) => Ok(e),

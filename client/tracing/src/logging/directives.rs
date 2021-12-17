@@ -17,7 +17,8 @@
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing_subscriber::{
-	filter::Directive, fmt as tracing_fmt, layer, reload::Handle, EnvFilter, Registry,
+	filter::Directive, fmt as tracing_fmt, fmt::time::ChronoLocal, layer, reload::Handle,
+	EnvFilter, Registry,
 };
 
 // Handle to reload the tracing log filter
@@ -62,7 +63,12 @@ pub fn reload_filter() -> Result<(), String> {
 	let mut env_filter = EnvFilter::default();
 	if let Some(current_directives) = CURRENT_DIRECTIVES.get() {
 		// Use join and then split in case any directives added together
-		for directive in current_directives.lock().join(",").split(',').map(|d| d.parse()) {
+		for directive in current_directives
+			.lock()
+			.join(",")
+			.split(',')
+			.map(|d| d.parse())
+		{
 			match directive {
 				Ok(dir) => env_filter = env_filter.add_directive(dir),
 				Err(invalid_directive) => {
@@ -71,16 +77,15 @@ pub fn reload_filter() -> Result<(), String> {
 						"Unable to parse directive while setting log filter: {:?}",
 						invalid_directive,
 					);
-				},
+				}
 			}
 		}
 	}
-
-	// Set the max logging level for the `log` macros.
-	let max_level_hint =
-		tracing_subscriber::Layer::<tracing_subscriber::FmtSubscriber>::max_level_hint(&env_filter);
-	log::set_max_level(super::to_log_level_filter(max_level_hint));
-
+	env_filter = env_filter.add_directive(
+		"sc_tracing=trace"
+			.parse()
+			.expect("provided directive is valid"),
+	);
 	log::debug!(target: "tracing", "Reloading log filter with: {}", env_filter);
 	FILTER_RELOAD_HANDLE
 		.get()
@@ -93,9 +98,14 @@ pub fn reload_filter() -> Result<(), String> {
 ///
 /// Includes substrate defaults and CLI supplied directives.
 pub fn reset_log_filter() -> Result<(), String> {
-	let directive = DEFAULT_DIRECTIVES.get_or_init(|| Mutex::new(Vec::new())).lock().clone();
+	let directive = DEFAULT_DIRECTIVES
+		.get_or_init(|| Mutex::new(Vec::new()))
+		.lock()
+		.clone();
 
-	*CURRENT_DIRECTIVES.get_or_init(|| Mutex::new(Vec::new())).lock() = directive;
+	*CURRENT_DIRECTIVES
+		.get_or_init(|| Mutex::new(Vec::new()))
+		.lock() = directive;
 	reload_filter()
 }
 
@@ -108,6 +118,6 @@ pub(crate) fn set_reload_handle(handle: Handle<EnvFilter, SCSubscriber>) {
 // Used in the reload `Handle`.
 type SCSubscriber<
 	N = tracing_fmt::format::DefaultFields,
-	E = crate::logging::EventFormat,
-	W = crate::logging::DefaultLogger,
+	E = crate::logging::EventFormat<ChronoLocal>,
+	W = fn() -> std::io::Stderr,
 > = layer::Layered<tracing_fmt::Layer<Registry, N, E, W>, Registry>;

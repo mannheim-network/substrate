@@ -15,14 +15,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod mmr;
 pub mod storage;
 pub mod utils;
+mod mmr;
 
 use crate::primitives::FullLeaf;
 use sp_runtime::traits;
 
-pub use self::mmr::{verify_leaf_proof, Mmr};
+pub use self::mmr::{Mmr, verify_leaf_proof};
 
 /// Node type for runtime `T`.
 pub type NodeOf<T, I, L> = Node<<T as crate::Config<I>>::Hashing, L>;

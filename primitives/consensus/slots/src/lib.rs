@@ -19,12 +19,10 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use codec::{Decode, Encode, MaxEncodedLen};
-use scale_info::TypeInfo;
+use codec::{Decode, Encode};
 
 /// Unit type wrapper that represents a slot.
-#[derive(Debug, Encode, MaxEncodedLen, Decode, Eq, Clone, Copy, Default, Ord, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Encode, Decode, Eq, Clone, Copy, Default, Ord)]
 pub struct Slot(u64);
 
 impl core::ops::Deref for Slot {
@@ -98,7 +96,7 @@ impl From<Slot> for u64 {
 /// produces more than one block on the same slot. The proof of equivocation
 /// are the given distinct headers that were signed by the validator and which
 /// include the slot number.
-#[derive(Clone, Debug, Decode, Encode, PartialEq, TypeInfo)]
+#[derive(Clone, Debug, Decode, Encode, PartialEq)]
 pub struct EquivocationProof<Header, Id> {
 	/// Returns the authority id of the equivocator.
 	pub offender: Id,

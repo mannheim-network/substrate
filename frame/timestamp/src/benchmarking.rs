@@ -20,11 +20,12 @@
 #![cfg(feature = "runtime-benchmarks")]
 
 use super::*;
-use frame_benchmarking::{benchmarks, TrackedStorageKey};
-use frame_support::{ensure, traits::OnFinalize};
+use sp_std::prelude::*;
 use frame_system::RawOrigin;
+use frame_support::{ensure, traits::OnFinalize};
+use frame_benchmarking::{benchmarks, TrackedStorageKey};
 
-use crate::Pallet as Timestamp;
+use crate::Module as Timestamp;
 
 const MAX_TIME: u32 = 100;
 
@@ -35,9 +36,8 @@ benchmarks! {
 		let did_update_key = crate::DidUpdate::<T>::hashed_key().to_vec();
 		frame_benchmarking::benchmarking::add_to_whitelist(TrackedStorageKey {
 			key: did_update_key,
-			reads: 0,
-			writes: 1,
-			whitelisted: false,
+			has_been_read: false,
+			has_been_written: true,
 		});
 	}: _(RawOrigin::None, t.into())
 	verify {
@@ -55,6 +55,19 @@ benchmarks! {
 	verify {
 		ensure!(!DidUpdate::<T>::exists(), "Time was not removed.");
 	}
+}
 
-	impl_benchmark_test_suite!(Timestamp, crate::tests::new_test_ext(), crate::tests::Test);
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::tests::{new_test_ext, Test};
+	use frame_support::assert_ok;
+
+	#[test]
+	fn test_benchmarks() {
+		new_test_ext().execute_with(|| {
+			assert_ok!(test_benchmark_set::<Test>());
+			assert_ok!(test_benchmark_on_finalize::<Test>());
+		});
+	}
 }

@@ -20,50 +20,47 @@
 //!
 //! Most likely you should use `define_env` macro.
 
+#[macro_export]
 macro_rules! convert_args {
 	() => (vec![]);
 	( $( $t:ty ),* ) => ( vec![ $( { use $crate::wasm::env_def::ConvertibleToWasm; <$t>::VALUE_TYPE }, )* ] );
 }
 
+#[macro_export]
 macro_rules! gen_signature {
 	( ( $( $params: ty ),* ) ) => (
 		{
-			pwasm_utils::parity_wasm::elements::FunctionType::new(
-				convert_args!($($params),*), vec![],
-			)
+			parity_wasm::elements::FunctionType::new(convert_args!($($params),*), None)
 		}
 	);
 
 	( ( $( $params: ty ),* ) -> $returns: ty ) => (
 		{
-			pwasm_utils::parity_wasm::elements::FunctionType::new(
-				convert_args!($($params),*),
-				vec![{use $crate::wasm::env_def::ConvertibleToWasm; <$returns>::VALUE_TYPE}],
-			)
+			parity_wasm::elements::FunctionType::new(convert_args!($($params),*), Some({
+				use $crate::wasm::env_def::ConvertibleToWasm; <$returns>::VALUE_TYPE
+			}))
 		}
 	);
 }
 
+#[macro_export]
 macro_rules! gen_signature_dispatch {
 	(
-		$needle_module:ident,
 		$needle_name:ident,
 		$needle_sig:ident ;
-		$module:ident,
 		$name:ident
-		( $ctx:ident $( , $names:ident : $params:ty )* ) $( -> $returns:ty )* , $($rest:tt)*
-	) => {
-		let module = stringify!($module).as_bytes();
-		if module == $needle_module && stringify!($name).as_bytes() == $needle_name {
+		( $ctx:ident $( , $names:ident : $params:ty )* ) $( -> $returns:ty )* , $($rest:tt)* ) => {
+		if stringify!($name).as_bytes() == $needle_name {
 			let signature = gen_signature!( ( $( $params ),* ) $( -> $returns )* );
 			if $needle_sig == &signature {
 				return true;
 			}
 		} else {
-			gen_signature_dispatch!($needle_module, $needle_name, $needle_sig ; $($rest)*);
+			gen_signature_dispatch!($needle_name, $needle_sig ; $($rest)*);
 		}
 	};
-	( $needle_module:ident, $needle_name:ident, $needle_sig:ident ; ) => {};
+	( $needle_name:ident, $needle_sig:ident ; ) => {
+	};
 }
 
 /// Unmarshall arguments and then execute `body` expression and return its result.
@@ -105,6 +102,7 @@ where
 	f
 }
 
+#[macro_export]
 macro_rules! unmarshall_then_body_then_marshall {
 	( $args_iter:ident, $ctx:ident, ( $( $names:ident : $params:ty ),* ) -> $returns:ty => $body:tt ) => ({
 		let body = $crate::wasm::env_def::macros::constrain_closure::<
@@ -130,9 +128,10 @@ macro_rules! unmarshall_then_body_then_marshall {
 	})
 }
 
+#[macro_export]
 macro_rules! define_func {
-	( $trait:tt $name:ident ( $ctx: ident $(, $names:ident : $params:ty)*) $(-> $returns:ty)* => $body:tt ) => {
-		fn $name< E: $trait >(
+	( < E: $seal_ty:tt > $name:ident ( $ctx: ident $(, $names:ident : $params:ty)*) $(-> $returns:ty)* => $body:tt ) => {
+		fn $name< E: $seal_ty >(
 			$ctx: &mut $crate::wasm::Runtime<E>,
 			args: &[sp_sandbox::Value],
 		) -> Result<sp_sandbox::ReturnValue, sp_sandbox::HostError>
@@ -153,52 +152,24 @@ macro_rules! define_func {
 	};
 }
 
-macro_rules! register_body {
-	( $reg_cb:ident, $trait:tt;
-		$module:ident $name:ident ( $ctx:ident $( , $names:ident : $params:ty )* )
-		$( -> $returns:ty )* => $body:tt
+#[macro_export]
+macro_rules! register_func {
+	( $reg_cb:ident, < E: $seal_ty:tt > ; ) => {};
+
+	( $reg_cb:ident, < E: $seal_ty:tt > ;
+		$name:ident ( $ctx:ident $( , $names:ident : $params:ty )* )
+		$( -> $returns:ty )* => $body:tt $($rest:tt)*
 	) => {
 		$reg_cb(
-			stringify!($module).as_bytes(),
 			stringify!($name).as_bytes(),
 			{
 				define_func!(
-					 $trait $name ( $ctx $(, $names : $params )* ) $( -> $returns )* => $body
+					< E: $seal_ty > $name ( $ctx $(, $names : $params )* ) $( -> $returns )* => $body
 				);
 				$name::<E>
 			}
 		);
-	}
-}
-
-macro_rules! register_func {
-	( $reg_cb:ident, $trait:tt; ) => {};
-
-	( $reg_cb:ident, $trait:tt;
-		__unstable__ $name:ident ( $ctx:ident $( , $names:ident : $params:ty )* )
-		$( -> $returns:ty )* => $body:tt $($rest:tt)*
-	) => {
-		#[cfg(feature = "unstable-interface")]
-		register_body!(
-			$reg_cb, $trait;
-			__unstable__ $name
-			( $ctx $( , $names : $params )* )
-			$( -> $returns )* => $body
-		);
-		register_func!( $reg_cb, $trait; $($rest)* );
-	};
-
-	( $reg_cb:ident, $trait:tt;
-		$module:ident $name:ident ( $ctx:ident $( , $names:ident : $params:ty )* )
-		$( -> $returns:ty )* => $body:tt $($rest:tt)*
-	) => {
-		register_body!(
-			$reg_cb, $trait;
-			$module $name
-			( $ctx $( , $names : $params )* )
-			$( -> $returns )* => $body
-		);
-		register_func!( $reg_cb, $trait; $($rest)* );
+		register_func!( $reg_cb, < E: $seal_ty > ; $($rest)* );
 	};
 }
 
@@ -210,27 +181,15 @@ macro_rules! register_func {
 /// It's up to the user of this macro to check signatures of wasm code to be executed
 /// and reject the code if any imported function has a mismatched signature.
 macro_rules! define_env {
-	( $init_name:ident , < E: $trait:tt > ,
-		$( [$module:ident] $name:ident ( $ctx:ident $( , $names:ident : $params:ty )* )
+	( $init_name:ident , < E: $seal_ty:tt > ,
+		$( $name:ident ( $ctx:ident $( , $names:ident : $params:ty )* )
 			$( -> $returns:ty )* => $body:tt , )*
 	) => {
 		pub struct $init_name;
 
 		impl $crate::wasm::env_def::ImportSatisfyCheck for $init_name {
-			fn can_satisfy(
-				module: &[u8],
-				name: &[u8],
-				func_type: &pwasm_utils::parity_wasm::elements::FunctionType,
-			) -> bool
-			{
-				#[cfg(not(feature = "unstable-interface"))]
-				if module == b"__unstable__" {
-					return false;
-				}
-				gen_signature_dispatch!(
-					module, name, func_type ;
-					$( $module, $name ( $ctx $(, $names : $params )* ) $( -> $returns )* , )*
-				);
+			fn can_satisfy(name: &[u8], func_type: &parity_wasm::elements::FunctionType) -> bool {
+				gen_signature_dispatch!( name, func_type ; $( $name ( $ctx $(, $names : $params )* ) $( -> $returns )* , )* );
 
 				return false;
 			}
@@ -242,12 +201,8 @@ macro_rules! define_env {
 				sp_core::crypto::UncheckedFrom<<E::T as frame_system::Config>::Hash> +
 					AsRef<[u8]>
 		{
-			fn impls<F: FnMut(&[u8], &[u8], $crate::wasm::env_def::HostFunc<E>)>(f: &mut F) {
-				register_func!(
-					f,
-					$trait;
-					$( $module $name ( $ctx $( , $names : $params )* ) $( -> $returns)* => $body )*
-				);
+			fn impls<F: FnMut(&[u8], $crate::wasm::env_def::HostFunc<E>)>(f: &mut F) {
+				register_func!(f, < E: $seal_ty > ; $( $name ( $ctx $( , $names : $params )* ) $( -> $returns)* => $body )* );
 			}
 		}
 	};
@@ -255,14 +210,15 @@ macro_rules! define_env {
 
 #[cfg(test)]
 mod tests {
-	use crate::{
-		exec::Ext,
-		wasm::{runtime::TrapReason, tests::MockExt, Runtime},
-		Weight,
-	};
-	use pwasm_utils::parity_wasm::elements::{FunctionType, ValueType};
+	use parity_wasm::elements::FunctionType;
+	use parity_wasm::elements::ValueType;
 	use sp_runtime::traits::Zero;
 	use sp_sandbox::{ReturnValue, Value};
+	use crate::{
+		wasm::{Runtime, runtime::TrapReason, tests::MockExt},
+		exec::Ext,
+		gas::Gas,
+	};
 
 	struct TestRuntime {
 		value: u32,
@@ -325,27 +281,28 @@ mod tests {
 
 	#[test]
 	fn macro_define_func() {
-		define_func!( Ext seal_gas (_ctx, amount: u32) => {
-			let amount = Weight::from(amount);
+		define_func!( <E: Ext> seal_gas (_ctx, amount: u32) => {
+			let amount = Gas::from(amount);
 			if !amount.is_zero() {
 				Ok(())
 			} else {
 				Err(TrapReason::Termination)
 			}
 		});
-		let _f: fn(
-			&mut Runtime<MockExt>,
-			&[sp_sandbox::Value],
-		) -> Result<sp_sandbox::ReturnValue, sp_sandbox::HostError> = seal_gas::<MockExt>;
+		let _f: fn(&mut Runtime<MockExt>, &[sp_sandbox::Value])
+			-> Result<sp_sandbox::ReturnValue, sp_sandbox::HostError> = seal_gas::<MockExt>;
 	}
 
 	#[test]
 	fn macro_gen_signature() {
-		assert_eq!(gen_signature!((i32)), FunctionType::new(vec![ValueType::I32], vec![]));
+		assert_eq!(
+			gen_signature!((i32)),
+			FunctionType::new(vec![ValueType::I32], None),
+		);
 
 		assert_eq!(
 			gen_signature!( (i32, u32) -> u32 ),
-			FunctionType::new(vec![ValueType::I32, ValueType::I32], vec![ValueType::I32]),
+			FunctionType::new(vec![ValueType::I32, ValueType::I32], Some(ValueType::I32)),
 		);
 	}
 
@@ -376,8 +333,8 @@ mod tests {
 		use crate::wasm::env_def::ImportSatisfyCheck;
 
 		define_env!(Env, <E: Ext>,
-			[seal0] seal_gas( _ctx, amount: u32 ) => {
-				let amount = Weight::from(amount);
+			seal_gas( _ctx, amount: u32 ) => {
+				let amount = Gas::from(amount);
 				if !amount.is_zero() {
 					Ok(())
 				} else {
@@ -386,11 +343,7 @@ mod tests {
 			},
 		);
 
-		assert!(Env::can_satisfy(
-			b"seal0",
-			b"seal_gas",
-			&FunctionType::new(vec![ValueType::I32], vec![])
-		));
-		assert!(!Env::can_satisfy(b"seal0", b"not_exists", &FunctionType::new(vec![], vec![])));
+		assert!(Env::can_satisfy(b"seal_gas", &FunctionType::new(vec![ValueType::I32], None)));
+		assert!(!Env::can_satisfy(b"not_exists", &FunctionType::new(vec![], None)));
 	}
 }

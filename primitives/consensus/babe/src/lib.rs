@@ -28,10 +28,7 @@ pub use sp_consensus_vrf::schnorrkel::{
 	Randomness, RANDOMNESS_LENGTH, VRF_OUTPUT_LENGTH, VRF_PROOF_LENGTH,
 };
 
-use codec::{Decode, Encode, MaxEncodedLen};
-use scale_info::TypeInfo;
-#[cfg(feature = "std")]
-use serde::{Deserialize, Serialize};
+use codec::{Decode, Encode};
 #[cfg(feature = "std")]
 use sp_keystore::vrf::{VRFTranscriptData, VRFTranscriptValue};
 use sp_runtime::{traits::Header, ConsensusEngineId, RuntimeDebug};
@@ -89,15 +86,15 @@ pub type EquivocationProof<H> = sp_consensus_slots::EquivocationProof<H, Authori
 //       `Weight` types, since the metadata isn't able to disambiguate.
 pub type BabeAuthorityWeight = u64;
 
-/// The cumulative weight of a BABE block, i.e. sum of block weights starting
-/// at this block until the genesis block.
-///
-/// Primary blocks have a weight of 1 whereas secondary blocks have a weight
-/// of 0 (regardless of whether they are plain or vrf secondary blocks).
+/// The weight of a BABE block.
 pub type BabeBlockWeight = u32;
 
 /// Make a VRF transcript from given randomness, slot number and epoch.
-pub fn make_transcript(randomness: &Randomness, slot: Slot, epoch: u64) -> Transcript {
+pub fn make_transcript(
+	randomness: &Randomness,
+	slot: Slot,
+	epoch: u64,
+) -> Transcript {
 	let mut transcript = Transcript::new(&BABE_ENGINE_ID);
 	transcript.append_u64(b"slot number", *slot);
 	transcript.append_u64(b"current epoch", epoch);
@@ -107,14 +104,18 @@ pub fn make_transcript(randomness: &Randomness, slot: Slot, epoch: u64) -> Trans
 
 /// Make a VRF transcript data container
 #[cfg(feature = "std")]
-pub fn make_transcript_data(randomness: &Randomness, slot: Slot, epoch: u64) -> VRFTranscriptData {
+pub fn make_transcript_data(
+	randomness: &Randomness,
+	slot: Slot,
+	epoch: u64,
+) -> VRFTranscriptData {
 	VRFTranscriptData {
 		label: &BABE_ENGINE_ID,
 		items: vec![
 			("slot number", VRFTranscriptValue::U64(*slot)),
 			("current epoch", VRFTranscriptValue::U64(epoch)),
 			("chain randomness", VRFTranscriptValue::Bytes(randomness.to_vec())),
-		],
+		]
 	}
 }
 
@@ -214,8 +215,7 @@ pub struct BabeGenesisConfiguration {
 }
 
 /// Types of allowed slots.
-#[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, RuntimeDebug, MaxEncodedLen, TypeInfo)]
-#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, RuntimeDebug)]
 pub enum AllowedSlots {
 	/// Only allow primary slots.
 	PrimarySlots,
@@ -239,16 +239,15 @@ impl AllowedSlots {
 
 #[cfg(feature = "std")]
 impl sp_consensus::SlotData for BabeGenesisConfiguration {
-	fn slot_duration(&self) -> std::time::Duration {
-		std::time::Duration::from_millis(self.slot_duration)
+	fn slot_duration(&self) -> u64 {
+		self.slot_duration
 	}
 
 	const SLOT_KEY: &'static [u8] = b"babe_configuration";
 }
 
 /// Configuration data used by the BABE consensus engine.
-#[derive(Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug, MaxEncodedLen, TypeInfo)]
-#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
+#[derive(Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug)]
 pub struct BabeEpochConfiguration {
 	/// A constant value that is used in the threshold calculation formula.
 	/// Expressed as a rational where the first member of the tuple is the
@@ -273,15 +272,20 @@ where
 	use digests::*;
 	use sp_application_crypto::RuntimeAppPublic;
 
-	let find_pre_digest =
-		|header: &H| header.digest().logs().iter().find_map(|log| log.as_babe_pre_digest());
+	let find_pre_digest = |header: &H| {
+		header
+			.digest()
+			.logs()
+			.iter()
+			.find_map(|log| log.as_babe_pre_digest())
+	};
 
 	let verify_seal_signature = |mut header: H, offender: &AuthorityId| {
 		let seal = header.digest_mut().pop()?.as_babe_seal()?;
 		let pre_hash = header.hash();
 
 		if !offender.verify(&pre_hash.as_ref(), &seal) {
-			return None
+			return None;
 		}
 
 		Some(())
@@ -290,7 +294,7 @@ where
 	let verify_proof = || {
 		// we must have different headers for the equivocation to be valid
 		if proof.first_header.hash() == proof.second_header.hash() {
-			return None
+			return None;
 		}
 
 		let first_pre_digest = find_pre_digest(&proof.first_header)?;
@@ -301,12 +305,12 @@ where
 		if proof.slot != first_pre_digest.slot() ||
 			first_pre_digest.slot() != second_pre_digest.slot()
 		{
-			return None
+			return None;
 		}
 
 		// both headers must have been authored by the same authority
 		if first_pre_digest.authority_index() != second_pre_digest.authority_index() {
-			return None
+			return None;
 		}
 
 		// we finally verify that the expected authority has signed both headers and
@@ -358,8 +362,6 @@ pub struct Epoch {
 	pub authorities: Vec<(AuthorityId, BabeAuthorityWeight)>,
 	/// Randomness for this epoch.
 	pub randomness: [u8; VRF_OUTPUT_LENGTH],
-	/// Configuration of the epoch.
-	pub config: BabeEpochConfiguration,
 }
 
 sp_api::decl_runtime_apis! {

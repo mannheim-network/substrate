@@ -19,13 +19,13 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use codec::{Decode, Encode};
+use codec::{Encode, Decode};
 
-pub use sp_application_crypto;
 use sp_application_crypto::sr25519;
+pub use sp_application_crypto;
 
 pub use sp_core::{hash::H256, RuntimeDebug};
-use sp_runtime::traits::{BlakeTwo256, Extrinsic as ExtrinsicT, Verify};
+use sp_runtime::traits::{BlakeTwo256, Verify, Extrinsic as ExtrinsicT,};
 
 /// Extrinsic for test-runtime.
 #[derive(Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug)]
@@ -37,10 +37,7 @@ pub enum Extrinsic {
 
 #[cfg(feature = "std")]
 impl serde::Serialize for Extrinsic {
-	fn serialize<S>(&self, seq: S) -> Result<S::Ok, S::Error>
-	where
-		S: ::serde::Serializer,
-	{
+	fn serialize<S>(&self, seq: S) -> Result<S::Ok, S::Error> where S: ::serde::Serializer {
 		self.using_encoded(|bytes| seq.serialize_bytes(bytes))
 	}
 }
@@ -73,10 +70,18 @@ pub type BlockNumber = u64;
 /// Index of a transaction.
 pub type Index = u64;
 /// The item of a block digest.
-pub type DigestItem = sp_runtime::generic::DigestItem;
+pub type DigestItem = sp_runtime::generic::DigestItem<H256>;
 /// The digest of a block.
-pub type Digest = sp_runtime::generic::Digest;
+pub type Digest = sp_runtime::generic::Digest<H256>;
 /// A test block.
 pub type Block = sp_runtime::generic::Block<Header, Extrinsic>;
 /// A test block's header.
 pub type Header = sp_runtime::generic::Header<BlockNumber, BlakeTwo256>;
+
+/// Changes trie configuration (optionally) used in tests.
+pub fn changes_trie_config() -> sp_core::ChangesTrieConfiguration {
+	sp_core::ChangesTrieConfiguration {
+		digest_interval: 4,
+		digest_levels: 2,
+	}
+}

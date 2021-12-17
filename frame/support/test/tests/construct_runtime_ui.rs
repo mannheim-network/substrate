@@ -18,7 +18,6 @@
 use std::env;
 
 #[rustversion::attr(not(stable), ignore)]
-#[cfg(not(feature = "disable-ui-tests"))]
 #[test]
 fn ui() {
 	// As trybuild is using `cargo check`, we don't need the real WASM binaries.

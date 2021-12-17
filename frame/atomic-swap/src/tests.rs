@@ -3,10 +3,7 @@
 use super::*;
 use crate as pallet_atomic_swap;
 
-use frame_support::{
-	parameter_types,
-	traits::{ConstU32, ConstU64},
-};
+use frame_support::parameter_types;
 use sp_core::H256;
 use sp_runtime::{
 	testing::Header,
@@ -22,18 +19,19 @@ frame_support::construct_runtime!(
 		NodeBlock = Block,
 		UncheckedExtrinsic = UncheckedExtrinsic,
 	{
-		System: frame_system::{Pallet, Call, Config, Storage, Event<T>},
-		Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
-		AtomicSwap: pallet_atomic_swap::{Pallet, Call, Event<T>},
+		System: frame_system::{Module, Call, Config, Storage, Event<T>},
+		Balances: pallet_balances::{Module, Call, Storage, Config<T>, Event<T>},
+		AtomicSwap: pallet_atomic_swap::{Module, Call, Event<T>},
 	}
 );
 
 parameter_types! {
+	pub const BlockHashCount: u64 = 250;
 	pub BlockWeights: frame_system::limits::BlockWeights =
 		frame_system::limits::BlockWeights::simple_max(1024);
 }
 impl frame_system::Config for Test {
-	type BaseCallFilter = frame_support::traits::Everything;
+	type BaseCallFilter = ();
 	type BlockWeights = ();
 	type BlockLength = ();
 	type DbWeight = ();
@@ -47,7 +45,7 @@ impl frame_system::Config for Test {
 	type Lookup = IdentityLookup<Self::AccountId>;
 	type Header = Header;
 	type Event = Event;
-	type BlockHashCount = ConstU64<250>;
+	type BlockHashCount = BlockHashCount;
 	type Version = ();
 	type PalletInfo = PalletInfo;
 	type AccountData = pallet_balances::AccountData<u64>;
@@ -55,26 +53,27 @@ impl frame_system::Config for Test {
 	type OnKilledAccount = ();
 	type SystemWeightInfo = ();
 	type SS58Prefix = ();
-	type OnSetCode = ();
-	type MaxConsumers = frame_support::traits::ConstU32<16>;
 }
-
+parameter_types! {
+	pub const ExistentialDeposit: u64 = 1;
+}
 impl pallet_balances::Config for Test {
 	type MaxLocks = ();
-	type MaxReserves = ();
-	type ReserveIdentifier = [u8; 8];
 	type Balance = u64;
 	type DustRemoval = ();
 	type Event = Event;
-	type ExistentialDeposit = ConstU64<1>;
+	type ExistentialDeposit = ExistentialDeposit;
 	type AccountStore = System;
 	type WeightInfo = ();
 }
-
+parameter_types! {
+	pub const ProofLimit: u32 = 1024;
+	pub const ExpireDuration: u64 = 100;
+}
 impl Config for Test {
 	type Event = Event;
 	type SwapAction = BalanceSwapAction<u64, Balances>;
-	type ProofLimit = ConstU32<1024>;
+	type ProofLimit = ProofLimit;
 }
 
 const A: u64 = 1;
@@ -82,7 +81,12 @@ const B: u64 = 2;
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut t = frame_system::GenesisConfig::default().build_storage::<Test>().unwrap();
-	let genesis = pallet_balances::GenesisConfig::<Test> { balances: vec![(A, 100), (B, 200)] };
+	let genesis = pallet_balances::GenesisConfig::<Test> {
+		balances: vec![
+			(A, 100),
+			(B, 200),
+		],
+	};
 	genesis.assimilate_storage(&mut t).unwrap();
 	t.into()
 }
@@ -105,8 +109,7 @@ fn two_party_successful_swap() {
 			hashed_proof.clone(),
 			BalanceSwapAction::new(50),
 			1000,
-		)
-		.unwrap();
+		).unwrap();
 
 		assert_eq!(Balances::free_balance(A), 100 - 50);
 		assert_eq!(Balances::free_balance(B), 200);
@@ -120,8 +123,7 @@ fn two_party_successful_swap() {
 			hashed_proof.clone(),
 			BalanceSwapAction::new(75),
 			1000,
-		)
-		.unwrap();
+		).unwrap();
 
 		assert_eq!(Balances::free_balance(A), 100);
 		assert_eq!(Balances::free_balance(B), 200 - 75);
@@ -129,8 +131,11 @@ fn two_party_successful_swap() {
 
 	// A reveals the proof and claims the swap on chain2.
 	chain2.execute_with(|| {
-		AtomicSwap::claim_swap(Origin::signed(A), proof.to_vec(), BalanceSwapAction::new(75))
-			.unwrap();
+		AtomicSwap::claim_swap(
+			Origin::signed(A),
+			proof.to_vec(),
+			BalanceSwapAction::new(75),
+		).unwrap();
 
 		assert_eq!(Balances::free_balance(A), 100 + 75);
 		assert_eq!(Balances::free_balance(B), 200 - 75);
@@ -138,8 +143,11 @@ fn two_party_successful_swap() {
 
 	// B use the revealed proof to claim the swap on chain1.
 	chain1.execute_with(|| {
-		AtomicSwap::claim_swap(Origin::signed(B), proof.to_vec(), BalanceSwapAction::new(50))
-			.unwrap();
+		AtomicSwap::claim_swap(
+			Origin::signed(B),
+			proof.to_vec(),
+			BalanceSwapAction::new(50),
+		).unwrap();
 
 		assert_eq!(Balances::free_balance(A), 100 - 50);
 		assert_eq!(Balances::free_balance(B), 200 + 50);

@@ -19,22 +19,22 @@
 
 #![cfg(feature = "runtime-benchmarks")]
 
-use frame_benchmarking::{account, benchmarks, whitelisted_caller};
-use frame_support::ensure;
-use frame_system::RawOrigin;
-use sp_runtime::traits::Saturating;
-
 use super::*;
-use crate::Pallet as TipsMod;
+
+use frame_system::RawOrigin;
+use frame_benchmarking::{benchmarks, account, whitelisted_caller};
+use sp_runtime::{traits::{Saturating}};
+
+use crate::Module as TipsMod;
 
 const SEED: u32 = 0;
 
 // Create the pre-requisite information needed to create a `report_awesome`.
 fn setup_awesome<T: Config>(length: u32) -> (T::AccountId, Vec<u8>, T::AccountId) {
 	let caller = whitelisted_caller();
-	let value = T::TipReportDepositBase::get() +
-		T::DataDepositPerByte::get() * length.into() +
-		T::Currency::minimum_balance();
+	let value = T::TipReportDepositBase::get()
+		+ T::DataDepositPerByte::get() * length.into()
+		+ T::Currency::minimum_balance();
 	let _ = T::Currency::make_free_balance_be(&caller, value);
 	let reason = vec![0; length as usize];
 	let awesome_person = account("awesome", 0, SEED);
@@ -42,13 +42,12 @@ fn setup_awesome<T: Config>(length: u32) -> (T::AccountId, Vec<u8>, T::AccountId
 }
 
 // Create the pre-requisite information needed to call `tip_new`.
-fn setup_tip<T: Config>(
-	r: u32,
-	t: u32,
-) -> Result<(T::AccountId, Vec<u8>, T::AccountId, BalanceOf<T>), &'static str> {
+fn setup_tip<T: Config>(r: u32, t: u32) ->
+	Result<(T::AccountId, Vec<u8>, T::AccountId, BalanceOf<T>), &'static str>
+{
 	let tippers_count = T::Tippers::count();
 
-	for i in 0..t {
+	for i in 0 .. t {
 		let member = account("member", i, SEED);
 		T::Tippers::add(&member);
 		ensure!(T::Tippers::contains(&member), "failed to add tipper");
@@ -64,8 +63,10 @@ fn setup_tip<T: Config>(
 
 // Create `t` new tips for the tip proposal with `hash`.
 // This function automatically makes the tip able to close.
-fn create_tips<T: Config>(t: u32, hash: T::Hash, value: BalanceOf<T>) -> Result<(), &'static str> {
-	for i in 0..t {
+fn create_tips<T: Config>(t: u32, hash: T::Hash, value: BalanceOf<T>) ->
+	Result<(), &'static str>
+{
+	for i in 0 .. t {
 		let caller = account("member", i, SEED);
 		ensure!(T::Tippers::contains(&caller), "caller is not a tipper");
 		TipsMod::<T>::tip(RawOrigin::Signed(caller).into(), hash, value)?;
@@ -84,9 +85,12 @@ fn setup_pot_account<T: Config>() {
 	let _ = T::Currency::make_free_balance_be(&pot_account, value);
 }
 
+const MAX_BYTES: u32 = 16384;
+const MAX_TIPPERS: u32 = 100;
+
 benchmarks! {
 	report_awesome {
-		let r in 0 .. T::MaximumReasonLength::get();
+		let r in 0 .. MAX_BYTES;
 		let (caller, reason, awesome_person) = setup_awesome::<T>(r);
 		// Whitelist caller account from further DB operations.
 		let caller_key = frame_system::Account::<T>::hashed_key_for(&caller);
@@ -94,7 +98,7 @@ benchmarks! {
 	}: _(RawOrigin::Signed(caller), reason, awesome_person)
 
 	retract_tip {
-		let r = T::MaximumReasonLength::get();
+		let r = MAX_BYTES;
 		let (caller, reason, awesome_person) = setup_awesome::<T>(r);
 		TipsMod::<T>::report_awesome(
 			RawOrigin::Signed(caller.clone()).into(),
@@ -109,8 +113,8 @@ benchmarks! {
 	}: _(RawOrigin::Signed(caller), hash)
 
 	tip_new {
-		let r in 0 .. T::MaximumReasonLength::get();
-		let t in 1 .. T::Tippers::max_len() as u32;
+		let r in 0 .. MAX_BYTES;
+		let t in 1 .. MAX_TIPPERS;
 
 		let (caller, reason, beneficiary, value) = setup_tip::<T>(r, t)?;
 		// Whitelist caller account from further DB operations.
@@ -119,7 +123,7 @@ benchmarks! {
 	}: _(RawOrigin::Signed(caller), reason, beneficiary, value)
 
 	tip {
-		let t in 1 .. T::Tippers::max_len() as u32;
+		let t in 1 .. MAX_TIPPERS;
 		let (member, reason, beneficiary, value) = setup_tip::<T>(0, t)?;
 		let value = T::Currency::minimum_balance().saturating_mul(100u32.into());
 		TipsMod::<T>::tip_new(
@@ -139,7 +143,7 @@ benchmarks! {
 	}: _(RawOrigin::Signed(caller), hash, value)
 
 	close_tip {
-		let t in 1 .. T::Tippers::max_len() as u32;
+		let t in 1 .. MAX_TIPPERS;
 
 		// Make sure pot is funded
 		setup_pot_account::<T>();
@@ -168,7 +172,7 @@ benchmarks! {
 	}: _(RawOrigin::Signed(caller), hash)
 
 	slash_tip {
-		let t in 1 .. T::Tippers::max_len() as u32;
+		let t in 1 .. MAX_TIPPERS;
 
 		// Make sure pot is funded
 		setup_pot_account::<T>();
@@ -187,6 +191,23 @@ benchmarks! {
 		let hash = T::Hashing::hash_of(&(&reason_hash, &beneficiary));
 		ensure!(Tips::<T>::contains_key(hash), "tip does not exist");
 	}: _(RawOrigin::Root, hash)
+}
 
-	impl_benchmark_test_suite!(TipsMod, crate::tests::new_test_ext(), crate::tests::Test);
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::tests::{new_test_ext, Test};
+	use frame_support::assert_ok;
+
+	#[test]
+	fn test_benchmarks() {
+		new_test_ext().execute_with(|| {
+			assert_ok!(test_benchmark_report_awesome::<Test>());
+			assert_ok!(test_benchmark_retract_tip::<Test>());
+			assert_ok!(test_benchmark_tip_new::<Test>());
+			assert_ok!(test_benchmark_tip::<Test>());
+			assert_ok!(test_benchmark_close_tip::<Test>());
+			assert_ok!(test_benchmark_slash_tip::<Test>());
+		});
+	}
 }

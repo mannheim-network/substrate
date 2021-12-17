@@ -16,7 +16,6 @@
 // limitations under the License.
 
 #[rustversion::attr(not(stable), ignore)]
-#[cfg(not(feature = "disable-ui-tests"))]
 #[test]
 fn pallet_ui() {
 	// As trybuild is using `cargo check`, we don't need the real WASM binaries.
@@ -24,5 +23,4 @@ fn pallet_ui() {
 
 	let t = trybuild::TestCases::new();
 	t.compile_fail("tests/pallet_ui/*.rs");
-	t.pass("tests/pallet_ui/pass/*.rs");
 }

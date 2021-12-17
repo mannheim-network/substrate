@@ -19,18 +19,21 @@
 
 #[doc(hidden)]
 pub use futures;
-/// Marks async function to be executed by an async runtime suitable to test environment.
+/// Marks async function to be executed by an async runtime and provide a `TaskExecutor`, suitable
+/// to test environment.
 ///
 /// # Requirements
 ///
-/// You must have tokio in the `[dev-dependencies]` of your crate to use this macro.
+///	You must have tokio in the `[dev-dependencies]` of your crate to use this macro.
 ///
 /// # Example
 ///
 /// ```
 /// #[substrate_test_utils::test]
-/// async fn basic_test() {
+/// async fn basic_test(task_executor: TaskExecutor) {
 ///     assert!(true);
+///     // create your node in here and use task_executor
+///     // then don't forget to gracefully shutdown your node before exit
 /// }
 /// ```
 pub use substrate_test_utils_derive::test;
@@ -61,7 +64,7 @@ macro_rules! assert_eq_uvec {
 	( $x:expr, $y:expr $(,)? ) => {
 		$crate::__assert_eq_uvec!($x, $y);
 		$crate::__assert_eq_uvec!($y, $x);
-	};
+	}
 }
 
 #[macro_export]
@@ -69,9 +72,7 @@ macro_rules! assert_eq_uvec {
 macro_rules! __assert_eq_uvec {
 	( $x:expr, $y:expr ) => {
 		$x.iter().for_each(|e| {
-			if !$y.contains(e) {
-				panic!("vectors not equal: {:?} != {:?}", $x, $y);
-			}
+			if !$y.contains(e) { panic!(format!("vectors not equal: {:?} != {:?}", $x, $y)); }
 		});
-	};
+	}
 }

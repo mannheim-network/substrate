@@ -20,7 +20,7 @@ time. If an entity is currently a member, this results in removal
 from the `Pool` and `Members`; the entity is immediately replaced
 by the next highest scoring candidate in the pool, if available.
 
-- [`scored_pool::Trait`](https://docs.rs/pallet-scored-pool/latest/pallet_scored_pool/trait.Config.html)
+- [`scored_pool::Trait`](https://docs.rs/pallet-scored-pool/latest/pallet_scored_pool/trait.Trait.html)
 - [`Call`](https://docs.rs/pallet-scored-pool/latest/pallet_scored_pool/enum.Call.html)
 - [`Module`](https://docs.rs/pallet-scored-pool/latest/pallet_scored_pool/struct.Module.html)
 
@@ -37,33 +37,26 @@ by the next highest scoring candidate in the pool, if available.
 ## Usage
 
 ```rust
+use frame_support::{decl_module, dispatch};
+use frame_system::ensure_signed;
 use pallet_scored_pool::{self as scored_pool};
 
-#[frame_support::pallet]
-pub mod pallet {
-    use super::*;
-    use frame_support::pallet_prelude::*;
-    use frame_system::pallet_prelude::*;
+pub trait Config: scored_pool::Config {}
 
-    #[pallet::pallet]
-    pub struct Pallet<T>(_);
+decl_module! {
+	pub struct Module<T: Config> for enum Call where origin: T::Origin {
+		#[weight = 0]
+		pub fn candidate(origin) -> dispatch::DispatchResult {
+			let who = ensure_signed(origin)?;
 
-    #[pallet::config]
-    pub trait Config: frame_system::Config + scored_pool::Config {}
-
-    #[pallet::call]
-    impl<T: Config> Pallet<T> {
-        #[pallet::weight(0)]
-        pub fn candidate(origin: OriginFor<T>) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-
-            let _ = <scored_pool::Pallet<T>>::submit_candidacy(
-                T::Origin::from(Some(who.clone()).into())
-            );
-            Ok(())
-        }
-    }
+			let _ = <scored_pool::Module<T>>::submit_candidacy(
+				T::Origin::from(Some(who.clone()).into())
+			);
+			Ok(())
+		}
+	}
 }
+
 ```
 
 ## Dependencies

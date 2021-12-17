@@ -18,22 +18,17 @@
 
 //! Functionality for reading and storing children hashes from db.
 
-use crate::DbHash;
-use codec::{Decode, Encode};
+use codec::{Encode, Decode};
 use sp_blockchain;
-use sp_database::{Database, Transaction};
 use std::hash::Hash;
+use sp_database::{Database, Transaction};
+use crate::DbHash;
 
 /// Returns the hashes of the children blocks of the block with `parent_hash`.
 pub fn read_children<
 	K: Eq + Hash + Clone + Encode + Decode,
 	V: Eq + Hash + Clone + Encode + Decode,
->(
-	db: &dyn Database<DbHash>,
-	column: u32,
-	prefix: &[u8],
-	parent_hash: K,
-) -> sp_blockchain::Result<Vec<V>> {
+>(db: &dyn Database<DbHash>, column: u32, prefix: &[u8], parent_hash: K) -> sp_blockchain::Result<Vec<V>> {
 	let mut buf = prefix.to_vec();
 	parent_hash.using_encoded(|s| buf.extend(s));
 
@@ -70,7 +65,9 @@ pub fn write_children<
 }
 
 /// Prepare transaction to remove the children of `parent_hash`.
-pub fn remove_children<K: Eq + Hash + Clone + Encode + Decode>(
+pub fn remove_children<
+	K: Eq + Hash + Clone + Encode + Decode,
+>(
 	tx: &mut Transaction<DbHash>,
 	column: u32,
 	prefix: &[u8],
@@ -80,6 +77,7 @@ pub fn remove_children<K: Eq + Hash + Clone + Encode + Decode>(
 	parent_hash.using_encoded(|s| key.extend(s));
 	tx.remove(column, &key);
 }
+
 
 #[cfg(test)]
 mod tests {

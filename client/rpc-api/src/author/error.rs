@@ -26,41 +26,54 @@ use sp_runtime::transaction_validity::InvalidTransaction;
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Author RPC future Result type.
-pub type FutureResult<T> = jsonrpc_core::BoxFuture<Result<T>>;
+pub type FutureResult<T> = Box<dyn rpc::futures::Future<Item = T, Error = Error> + Send>;
 
 /// Author RPC errors.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, derive_more::Display, derive_more::From)]
 pub enum Error {
 	/// Client error.
-	#[error("Client error: {}", .0)]
+	#[display(fmt="Client error: {}", _0)]
+	#[from(ignore)]
 	Client(Box<dyn std::error::Error + Send>),
 	/// Transaction pool error,
-	#[error("Transaction pool error: {}", .0)]
-	Pool(#[from] sc_transaction_pool_api::error::Error),
+	#[display(fmt="Transaction pool error: {}", _0)]
+	Pool(sp_transaction_pool::error::Error),
 	/// Verification error
-	#[error("Extrinsic verification error: {}", .0)]
+	#[display(fmt="Extrinsic verification error: {}", _0)]
+	#[from(ignore)]
 	Verification(Box<dyn std::error::Error + Send>),
 	/// Incorrect extrinsic format.
-	#[error("Invalid extrinsic format: {}", .0)]
-	BadFormat(#[from] codec::Error),
+	#[display(fmt="Invalid extrinsic format: {}", _0)]
+	BadFormat(codec::Error),
 	/// Incorrect seed phrase.
-	#[error("Invalid seed phrase/SURI")]
+	#[display(fmt="Invalid seed phrase/SURI")]
 	BadSeedPhrase,
 	/// Key type ID has an unknown format.
-	#[error("Invalid key type ID format (should be of length four)")]
+	#[display(fmt="Invalid key type ID format (should be of length four)")]
 	BadKeyType,
 	/// Key type ID has some unsupported crypto.
-	#[error("The crypto of key type ID is unknown")]
+	#[display(fmt="The crypto of key type ID is unknown")]
 	UnsupportedKeyType,
 	/// Some random issue with the key store. Shouldn't happen.
-	#[error("The key store is unavailable")]
+	#[display(fmt="The key store is unavailable")]
 	KeyStoreUnavailable,
 	/// Invalid session keys encoding.
-	#[error("Session keys are not encoded correctly")]
+	#[display(fmt="Session keys are not encoded correctly")]
 	InvalidSessionKeys,
 	/// Call to an unsafe RPC was denied.
-	#[error(transparent)]
-	UnsafeRpcCalled(#[from] crate::policy::UnsafeRpcError),
+	UnsafeRpcCalled(crate::policy::UnsafeRpcError),
+}
+
+impl std::error::Error for Error {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		match self {
+			Error::Client(ref err) => Some(&**err),
+			Error::Pool(ref err) => Some(err),
+			Error::Verification(ref err) => Some(&**err),
+			Error::UnsafeRpcCalled(ref err) => Some(err),
+			_ => None,
+		}
+	}
 }
 
 /// Base code for all authorship errors.
@@ -92,7 +105,7 @@ const POOL_UNACTIONABLE: i64 = POOL_INVALID_TX + 8;
 
 impl From<Error> for rpc::Error {
 	fn from(e: Error) -> Self {
-		use sc_transaction_pool_api::error::Error as PoolError;
+		use sp_transaction_pool::error::{Error as PoolError};
 
 		match e {
 			Error::BadFormat(e) => rpc::Error {

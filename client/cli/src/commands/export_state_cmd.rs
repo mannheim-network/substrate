@@ -17,19 +17,17 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::{
-	error,
-	params::{BlockNumberOrHash, PruningParams, SharedParams},
-	CliConfiguration,
+	CliConfiguration, error, params::{PruningParams, SharedParams, BlockNumberOrHash},
 };
 use log::info;
-use sc_client_api::{StorageProvider, UsageProvider};
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
-use std::{fmt::Debug, io::Write, str::FromStr, sync::Arc};
+use std::{fmt::Debug, str::FromStr, io::Write, sync::Arc};
 use structopt::StructOpt;
+use sc_client_api::{StorageProvider, UsageProvider};
 
 /// The `export-state` command used to export the state of a given block into
 /// a chain spec.
-#[derive(Debug, StructOpt, Clone)]
+#[derive(Debug, StructOpt)]
 pub struct ExportStateCmd {
 	/// Block hash or number.
 	#[structopt(value_name = "HASH or NUMBER")]

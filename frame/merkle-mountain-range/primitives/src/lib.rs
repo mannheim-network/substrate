@@ -20,21 +20,11 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
 
-use frame_support::RuntimeDebug;
-use sp_runtime::traits::{self, One, Saturating};
+use frame_support::{RuntimeDebug, debug};
+use sp_runtime::traits::{self, Saturating, One};
 use sp_std::fmt;
 #[cfg(not(feature = "std"))]
 use sp_std::prelude::Vec;
-
-/// A type to describe node position in the MMR (node index).
-pub type NodeIndex = u64;
-
-/// A type to describe leaf position in the MMR.
-///
-/// Note this is different from [`NodeIndex`], which can be applied to
-/// both leafs and inner nodes. Leafs will always have consecutive `LeafIndex`,
-/// but might be actually at different positions in the MMR `NodeIndex`.
-pub type LeafIndex = u64;
 
 /// A provider of the MMR's leaf data.
 pub trait LeafDataProvider {
@@ -61,14 +51,20 @@ impl LeafDataProvider for () {
 /// so that any point in time in the future we can receive a proof about some past
 /// blocks without using excessive on-chain storage.
 ///
-/// Hence we implement the [LeafDataProvider] for [frame_system::Pallet]. Since the
+/// Hence we implement the [LeafDataProvider] for [frame_system::Module]. Since the
 /// current block hash is not available (since the block is not finished yet),
 /// we use the `parent_hash` here along with parent block number.
-impl<T: frame_system::Config> LeafDataProvider for frame_system::Pallet<T> {
-	type LeafData = (<T as frame_system::Config>::BlockNumber, <T as frame_system::Config>::Hash);
+impl<T: frame_system::Config> LeafDataProvider for frame_system::Module<T> {
+	type LeafData = (
+		<T as frame_system::Config>::BlockNumber,
+		<T as frame_system::Config>::Hash
+	);
 
 	fn leaf_data() -> Self::LeafData {
-		(Self::block_number().saturating_sub(One::one()), Self::parent_hash())
+		(
+			Self::block_number().saturating_sub(One::one()),
+			Self::parent_hash()
+		)
 	}
 }
 
@@ -134,8 +130,7 @@ mod encoding {
 		fn encode_to<T: codec::Output + ?Sized>(&self, dest: &mut T) {
 			match self {
 				Self::Data(l) => l.using_encoded(
-					|data| Either::<&[u8], &H::Output>::Left(data).encode_to(dest),
-					false,
+					|data| Either::<&[u8], &H::Output>::Left(data).encode_to(dest), false
 				),
 				Self::Hash(h) => Either::<&[u8], &H::Output>::Right(h).encode_to(dest),
 			}
@@ -263,8 +258,7 @@ macro_rules! impl_leaf_data_for_tuple {
 
 /// Test functions implementation for `Compact<H, (DataOrHash<H, Tuple>, ...)>`
 #[cfg(test)]
-impl<H, A, B> Compact<H, (DataOrHash<H, A>, DataOrHash<H, B>)>
-where
+impl<H, A, B> Compact<H, (DataOrHash<H, A>, DataOrHash<H, B>)> where
 	H: traits::Hash,
 	A: FullLeaf,
 	B: FullLeaf,
@@ -285,9 +279,9 @@ impl_leaf_data_for_tuple!(A:0, B:1, C:2, D:3, E:4);
 #[derive(codec::Encode, codec::Decode, RuntimeDebug, Clone, PartialEq, Eq)]
 pub struct Proof<Hash> {
 	/// The index of the leaf the proof is for.
-	pub leaf_index: LeafIndex,
+	pub leaf_index: u64,
 	/// Number of leaves in MMR, when the proof was generated.
-	pub leaf_count: NodeIndex,
+	pub leaf_count: u64,
 	/// Proof elements (hashes of siblings of inner nodes on the path to the leaf).
 	pub items: Vec<Hash>,
 }
@@ -313,23 +307,13 @@ impl Error {
 	#![allow(unused_variables)]
 	/// Consume given error `e` with `self` and generate a native log entry with error details.
 	pub fn log_error(self, e: impl fmt::Debug) -> Self {
-		log::error!(
-			target: "runtime::mmr",
-			"[{:?}] MMR error: {:?}",
-			self,
-			e,
-		);
+		debug::native::error!("[{:?}] MMR error: {:?}", self, e);
 		self
 	}
 
 	/// Consume given error `e` with `self` and generate a native log entry with error details.
 	pub fn log_debug(self, e: impl fmt::Debug) -> Self {
-		log::debug!(
-			target: "runtime::mmr",
-			"[{:?}] MMR error: {:?}",
-			self,
-			e,
-		);
+		debug::native::debug!("[{:?}] MMR error: {:?}", self, e);
 		self
 	}
 }
@@ -352,7 +336,7 @@ pub struct OpaqueLeaf(
 	///
 	/// NOTE it DOES NOT include length prefix (like `Vec<u8>` encoding would).
 	#[cfg_attr(feature = "std", serde(with = "sp_core::bytes"))]
-	pub Vec<u8>,
+	pub Vec<u8>
 );
 
 impl OpaqueLeaf {
@@ -366,11 +350,6 @@ impl OpaqueLeaf {
 	pub fn from_encoded_leaf(encoded_leaf: Vec<u8>) -> Self {
 		OpaqueLeaf(encoded_leaf)
 	}
-
-	/// Attempt to decode the leaf into expected concrete type.
-	pub fn try_decode<T: codec::Decode>(&self) -> Option<T> {
-		codec::Decode::decode(&mut &*self.0).ok()
-	}
 }
 
 impl FullLeaf for OpaqueLeaf {
@@ -379,47 +358,18 @@ impl FullLeaf for OpaqueLeaf {
 	}
 }
 
-/// A type-safe wrapper for the concrete leaf type.
-///
-/// This structure serves merely to avoid passing raw `Vec<u8>` around.
-/// It must be `Vec<u8>`-encoding compatible.
-///
-/// It is different from [`OpaqueLeaf`], because it does implement `Codec`
-/// and the encoding has to match raw `Vec<u8>` encoding.
-#[derive(codec::Encode, codec::Decode, RuntimeDebug, PartialEq, Eq)]
-pub struct EncodableOpaqueLeaf(pub Vec<u8>);
-
-impl EncodableOpaqueLeaf {
-	/// Convert a concrete leaf into encodable opaque version.
-	pub fn from_leaf<T: FullLeaf>(leaf: &T) -> Self {
-		let opaque = OpaqueLeaf::from_leaf(leaf);
-		Self::from_opaque_leaf(opaque)
-	}
-
-	/// Given an opaque leaf, make it encodable.
-	pub fn from_opaque_leaf(opaque: OpaqueLeaf) -> Self {
-		Self(opaque.0)
-	}
-
-	/// Try to convert into a [OpaqueLeaf].
-	pub fn into_opaque_leaf(self) -> OpaqueLeaf {
-		// wrap into `OpaqueLeaf` type
-		OpaqueLeaf::from_encoded_leaf(self.0)
-	}
-}
-
 sp_api::decl_runtime_apis! {
 	/// API to interact with MMR pallet.
-	pub trait MmrApi<Hash: codec::Codec> {
+	pub trait MmrApi<Leaf: codec::Codec, Hash: codec::Codec> {
 		/// Generate MMR proof for a leaf under given index.
-		fn generate_proof(leaf_index: LeafIndex) -> Result<(EncodableOpaqueLeaf, Proof<Hash>), Error>;
+		fn generate_proof(leaf_index: u64) -> Result<(Leaf, Proof<Hash>), Error>;
 
 		/// Verify MMR proof against on-chain MMR.
 		///
 		/// Note this function will use on-chain MMR root hash and check if the proof
 		/// matches the hash.
 		/// See [Self::verify_proof_stateless] for a stateless verifier.
-		fn verify_proof(leaf: EncodableOpaqueLeaf, proof: Proof<Hash>) -> Result<(), Error>;
+		fn verify_proof(leaf: Leaf, proof: Proof<Hash>) -> Result<(), Error>;
 
 		/// Verify MMR proof against given root hash.
 		///
@@ -427,7 +377,7 @@ sp_api::decl_runtime_apis! {
 		/// proof is verified against given MMR root hash.
 		///
 		/// The leaf data is expected to be encoded in it's compact form.
-		fn verify_proof_stateless(root: Hash, leaf: EncodableOpaqueLeaf, proof: Proof<Hash>)
+		fn verify_proof_stateless(root: Hash, leaf: Vec<u8>, proof: Proof<Hash>)
 			-> Result<(), Error>;
 	}
 }
@@ -480,21 +430,25 @@ mod tests {
 		];
 
 		// when
-		let encoded = cases.iter().map(codec::Encode::encode).collect::<Vec<_>>();
+		let encoded = cases
+			.iter()
+			.map(codec::Encode::encode)
+			.collect::<Vec<_>>();
 
-		let decoded = encoded.iter().map(|x| Test::decode(&mut &**x)).collect::<Vec<_>>();
+		let decoded = encoded
+			.iter()
+			.map(|x| Test::decode(&mut &**x))
+			.collect::<Vec<_>>();
 
 		// then
-		assert_eq!(
-			decoded,
-			cases.into_iter().map(Result::<_, codec::Error>::Ok).collect::<Vec<_>>()
-		);
+		assert_eq!(decoded, cases.into_iter().map(Result::<_, codec::Error>::Ok).collect::<Vec<_>>());
 		// check encoding correctness
 		assert_eq!(&encoded[0], &hex_literal::hex!("00343048656c6c6f20576f726c6421"));
 		assert_eq!(
 			encoded[1].as_slice(),
-			hex_literal::hex!("01c3e7ba6b511162fead58f2c8b5764ce869ed1118011ac37392522ed16720bbcd")
-				.as_ref()
+			hex_literal::hex!(
+				"01c3e7ba6b511162fead58f2c8b5764ce869ed1118011ac37392522ed16720bbcd"
+			).as_ref()
 		);
 	}
 
@@ -521,7 +475,10 @@ mod tests {
 
 		// when
 		let c: TestCompact = Compact::new((a.clone(), b.clone()));
-		let d: TestCompact = Compact::new((Test::Hash(a.hash()), Test::Hash(b.hash())));
+		let d: TestCompact = Compact::new((
+			Test::Hash(a.hash()),
+			Test::Hash(b.hash()),
+		));
 
 		// then
 		assert_eq!(c.hash(), d.hash());
@@ -534,40 +491,50 @@ mod tests {
 		let b = Test::Data("".into());
 
 		let c: TestCompact = Compact::new((a.clone(), b.clone()));
-		let d: TestCompact = Compact::new((Test::Hash(a.hash()), Test::Hash(b.hash())));
+		let d: TestCompact = Compact::new((
+			Test::Hash(a.hash()),
+			Test::Hash(b.hash()),
+		));
 		let cases = vec![c, d.clone()];
 
 		// when
-		let encoded_compact =
-			cases.iter().map(|c| c.using_encoded(|x| x.to_vec(), true)).collect::<Vec<_>>();
+		let encoded_compact = cases
+			.iter()
+			.map(|c| c.using_encoded(|x| x.to_vec(), true))
+			.collect::<Vec<_>>();
 
-		let encoded =
-			cases.iter().map(|c| c.using_encoded(|x| x.to_vec(), false)).collect::<Vec<_>>();
+		let encoded = cases
+			.iter()
+			.map(|c| c.using_encoded(|x| x.to_vec(), false))
+			.collect::<Vec<_>>();
 
 		let decoded_compact = encoded_compact
 			.iter()
 			.map(|x| TestCompact::decode(&mut &**x))
 			.collect::<Vec<_>>();
 
-		let decoded = encoded.iter().map(|x| TestCompact::decode(&mut &**x)).collect::<Vec<_>>();
+		let decoded = encoded
+			.iter()
+			.map(|x| TestCompact::decode(&mut &**x))
+			.collect::<Vec<_>>();
 
 		// then
-		assert_eq!(
-			decoded,
-			cases.into_iter().map(Result::<_, codec::Error>::Ok).collect::<Vec<_>>()
-		);
+		assert_eq!(decoded, cases.into_iter().map(Result::<_, codec::Error>::Ok).collect::<Vec<_>>());
 
 		assert_eq!(decoded_compact, vec![Ok(d.clone()), Ok(d.clone())]);
 	}
 
 	#[test]
-	fn opaque_leaves_should_be_full_leaf_compatible() {
+	fn opaque_leaves_should_be_scale_compatible_with_concrete_ones() {
 		// given
 		let a = Test::Data("Hello World!".into());
 		let b = Test::Data("".into());
 
 		let c: TestCompact = Compact::new((a.clone(), b.clone()));
-		let d: TestCompact = Compact::new((Test::Hash(a.hash()), Test::Hash(b.hash())));
+		let d: TestCompact = Compact::new((
+			Test::Hash(a.hash()),
+			Test::Hash(b.hash()),
+		));
 		let cases = vec![c, d.clone()];
 
 		let encoded_compact = cases
@@ -576,38 +543,15 @@ mod tests {
 			.map(OpaqueLeaf::from_encoded_leaf)
 			.collect::<Vec<_>>();
 
-		let opaque = cases.iter().map(OpaqueLeaf::from_leaf).collect::<Vec<_>>();
-
-		// then
-		assert_eq!(encoded_compact, opaque);
-	}
-
-	#[test]
-	fn encode_opaque_leaf_should_be_scale_compatible() {
-		use codec::Encode;
-
-		// given
-		let a = Test::Data("Hello World!".into());
-		let case1 = EncodableOpaqueLeaf::from_leaf(&a);
-		let case2 = EncodableOpaqueLeaf::from_opaque_leaf(OpaqueLeaf(a.encode()));
-		let case3 = a.encode().encode();
-
-		// when
-		let encoded = vec![&case1, &case2].into_iter().map(|x| x.encode()).collect::<Vec<_>>();
-		let decoded = vec![&*encoded[0], &*encoded[1], &*case3]
-			.into_iter()
-			.map(|x| EncodableOpaqueLeaf::decode(&mut &*x))
+		let opaque = cases
+			.iter()
+			.map(OpaqueLeaf::from_leaf)
 			.collect::<Vec<_>>();
 
 		// then
-		assert_eq!(case1, case2);
-		assert_eq!(encoded[0], encoded[1]);
-		// then encoding should also match double-encoded leaf.
-		assert_eq!(encoded[0], case3);
-
-		assert_eq!(decoded[0], decoded[1]);
-		assert_eq!(decoded[1], decoded[2]);
-		assert_eq!(decoded[0], Ok(case2));
-		assert_eq!(decoded[1], Ok(case1));
+		assert_eq!(
+			encoded_compact,
+			opaque,
+		);
 	}
 }

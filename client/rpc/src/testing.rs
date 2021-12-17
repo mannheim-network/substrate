@@ -18,10 +18,8 @@
 
 //! Testing utils used by the RPC tests.
 
-use futures::{
-	executor,
-	task::{FutureObj, Spawn, SpawnError},
-};
+use rpc::futures::future as future01;
+use futures::{executor, compat::Future01CompatExt, FutureExt};
 
 // Executor shared by all tests.
 //
@@ -32,15 +30,16 @@ lazy_static::lazy_static! {
 		.expect("Failed to create thread pool executor for tests");
 }
 
+type Boxed01Future01 = Box<dyn future01::Future<Item = (), Error = ()> + Send + 'static>;
+
 /// Executor for use in testing
 pub struct TaskExecutor;
-impl Spawn for TaskExecutor {
-	fn spawn_obj(&self, future: FutureObj<'static, ()>) -> Result<(), SpawnError> {
-		EXECUTOR.spawn_ok(future);
-		Ok(())
-	}
-
-	fn status(&self) -> Result<(), SpawnError> {
+impl future01::Executor<Boxed01Future01> for TaskExecutor {
+	fn execute(
+		&self,
+		future: Boxed01Future01,
+	) -> std::result::Result<(), future01::ExecuteError<Boxed01Future01>>{
+		EXECUTOR.spawn_ok(future.compat().map(drop));
 		Ok(())
 	}
 }

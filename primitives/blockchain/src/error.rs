@@ -17,12 +17,12 @@
 
 //! Substrate client possible errors.
 
+use std::{self, result};
+use sp_state_machine;
+use sp_runtime::transaction_validity::TransactionValidityError;
+use sp_consensus;
 use codec::Error as CodecError;
 use sp_api::ApiError;
-use sp_consensus;
-use sp_runtime::transaction_validity::TransactionValidityError;
-use sp_state_machine;
-use std::{self, result};
 
 /// Client Result type alias
 pub type Result<T> = result::Result<T, Error>;
@@ -90,8 +90,8 @@ pub enum Error {
 	#[error("Failed to get runtime version: {0}")]
 	VersionInvalid(String),
 
-	#[error("Provided state is invalid")]
-	InvalidState,
+	#[error("Genesis config provided is invalid")]
+	GenesisInvalid,
 
 	#[error("error decoding justification for header")]
 	JustificationDecode,
@@ -114,8 +114,8 @@ pub enum Error {
 	#[error("Error decoding call result of {0}")]
 	CallResultDecode(&'static str, #[source] CodecError),
 
-	#[error("Error at calling runtime api: {0}")]
-	RuntimeApiError(#[from] ApiError),
+	#[error(transparent)]
+	RuntimeApiCodecError(#[from] ApiError),
 
 	#[error("Runtime :code missing in storage")]
 	RuntimeCodeMissing,
@@ -153,11 +153,9 @@ pub enum Error {
 	#[error("Failed to get header for hash {0}")]
 	MissingHeader(String),
 
+
 	#[error("State Database error: {0}")]
 	StateDatabase(String),
-
-	#[error("Failed to set the chain head to a block that's too old.")]
-	SetHeadTooOld,
 
 	#[error(transparent)]
 	Application(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
@@ -185,15 +183,6 @@ impl From<Box<dyn sp_state_machine::Error>> for Error {
 	}
 }
 
-impl From<Error> for ApiError {
-	fn from(err: Error) -> ApiError {
-		match err {
-			Error::RuntimeApiError(err) => err,
-			e => ApiError::Application(Box::new(e)),
-		}
-	}
-}
-
 impl Error {
 	/// Chain a blockchain error.
 	pub fn from_blockchain(e: Box<Error>) -> Self {
@@ -208,10 +197,7 @@ impl Error {
 	/// Construct from a state db error.
 	// Can not be done directly, since that would make cargo run out of stack if
 	// `sc-state-db` is lib is added as dependency.
-	pub fn from_state_db<E>(e: E) -> Self
-	where
-		E: std::fmt::Debug,
-	{
+	pub fn from_state_db<E>(e: E) -> Self where E: std::fmt::Debug {
 		Error::StateDatabase(format!("{:?}", e))
 	}
 }

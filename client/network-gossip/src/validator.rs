@@ -26,14 +26,15 @@ pub trait Validator<B: BlockT>: Send + Sync {
 	}
 
 	/// New connection is dropped.
-	fn peer_disconnected(&self, _context: &mut dyn ValidatorContext<B>, _who: &PeerId) {}
+	fn peer_disconnected(&self, _context: &mut dyn ValidatorContext<B>, _who: &PeerId) {
+	}
 
 	/// Validate consensus message.
 	fn validate(
 		&self,
 		context: &mut dyn ValidatorContext<B>,
 		sender: &PeerId,
-		data: &[u8],
+		data: &[u8]
 	) -> ValidationResult<B::Hash>;
 
 	/// Produce a closure for validating messages on a given topic.
@@ -42,9 +43,7 @@ pub trait Validator<B: BlockT>: Send + Sync {
 	}
 
 	/// Produce a closure for filtering egress messages.
-	fn message_allowed<'a>(
-		&'a self,
-	) -> Box<dyn FnMut(&PeerId, MessageIntent, &B::Hash, &[u8]) -> bool + 'a> {
+	fn message_allowed<'a>(&'a self) -> Box<dyn FnMut(&PeerId, MessageIntent, &B::Hash, &[u8]) -> bool + 'a> {
 		Box::new(move |_who, _intent, _topic, _data| true)
 	}
 }
@@ -100,9 +99,7 @@ impl<B: BlockT> Validator<B> for DiscardAll {
 		Box::new(move |_topic, _data| true)
 	}
 
-	fn message_allowed<'a>(
-		&'a self,
-	) -> Box<dyn FnMut(&PeerId, MessageIntent, &B::Hash, &[u8]) -> bool + 'a> {
+	fn message_allowed<'a>(&'a self) -> Box<dyn FnMut(&PeerId, MessageIntent, &B::Hash, &[u8]) -> bool + 'a> {
 		Box::new(move |_who, _intent, _topic, _data| false)
 	}
 }

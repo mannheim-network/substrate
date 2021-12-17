@@ -17,11 +17,11 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::arg_enums::Database;
-use sc_service::TransactionStorageMode;
 use structopt::StructOpt;
+use sc_service::TransactionStorageMode;
 
 /// Parameters for block import.
-#[derive(Debug, StructOpt, Clone)]
+#[derive(Debug, StructOpt)]
 pub struct DatabaseParams {
 	/// Select database backend to use.
 	#[structopt(
@@ -29,7 +29,6 @@ pub struct DatabaseParams {
 		alias = "db",
 		value_name = "DB",
 		case_insensitive = true,
-		possible_values = &Database::variants(),
 	)]
 	pub database: Option<Database>,
 
@@ -39,7 +38,7 @@ pub struct DatabaseParams {
 
 	/// Enable storage chain mode
 	///
-	/// This changes the storage format for blocks bodies.
+	/// This changes the storage format for blocks bodys. 
 	/// If this is enabled, each transaction is stored separately in the
 	/// transaction database column and is only referenced by hash
 	/// in the block body column.

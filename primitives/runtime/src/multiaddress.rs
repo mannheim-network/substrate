@@ -17,11 +17,11 @@
 
 //! MultiAddress type is a wrapper for multiple downstream account formats.
 
-use codec::{Decode, Encode};
+use codec::{Encode, Decode};
 use sp_std::vec::Vec;
 
 /// A multi-format address wrapper for on-chain accounts.
-#[derive(Encode, Decode, PartialEq, Eq, Clone, crate::RuntimeDebug, scale_info::TypeInfo)]
+#[derive(Encode, Decode, PartialEq, Eq, Clone, crate::RuntimeDebug)]
 #[cfg_attr(feature = "std", derive(Hash))]
 pub enum MultiAddress<AccountId, AccountIndex> {
 	/// It's an account ID (pubkey).
@@ -45,13 +45,9 @@ where
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		use sp_core::hexdisplay::HexDisplay;
 		match self {
-			Self::Raw(inner) => write!(f, "MultiAddress::Raw({})", HexDisplay::from(inner)),
-			Self::Address32(inner) => {
-				write!(f, "MultiAddress::Address32({})", HexDisplay::from(inner))
-			},
-			Self::Address20(inner) => {
-				write!(f, "MultiAddress::Address20({})", HexDisplay::from(inner))
-			},
+			MultiAddress::Raw(inner) => write!(f, "MultiAddress::Raw({})", HexDisplay::from(inner)),
+			MultiAddress::Address32(inner) => write!(f, "MultiAddress::Address32({})", HexDisplay::from(inner)),
+			MultiAddress::Address20(inner) => write!(f, "MultiAddress::Address20({})", HexDisplay::from(inner)),
 			_ => write!(f, "{:?}", self),
 		}
 	}
@@ -59,6 +55,12 @@ where
 
 impl<AccountId, AccountIndex> From<AccountId> for MultiAddress<AccountId, AccountIndex> {
 	fn from(a: AccountId) -> Self {
-		Self::Id(a)
+		MultiAddress::Id(a)
+	}
+}
+
+impl<AccountId: Default, AccountIndex> Default for MultiAddress<AccountId, AccountIndex> {
+	fn default() -> Self {
+		MultiAddress::Id(Default::default())
 	}
 }

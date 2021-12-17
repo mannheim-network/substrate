@@ -26,13 +26,5 @@ fn main() {
 		// depend on the stack-size.
 		.append_to_rust_flags("-Clink-arg=-zstack-size=1048576")
 		.import_memory()
-		.build();
-
-	WasmBuilder::new()
-		.with_current_project()
-		.export_heap_base()
-		.import_memory()
-		.set_file_name("wasm_binary_logging_disabled.rs")
-		.enable_feature("disable-logging")
-		.build();
+		.build()
 }

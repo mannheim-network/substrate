@@ -16,13 +16,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use parking_lot::Mutex;
 use std::sync::Arc;
+use parking_lot::Mutex;
 
-use sc_utils::mpsc::{tracing_unbounded, TracingUnboundedReceiver, TracingUnboundedSender};
 use sp_runtime::traits::Block as BlockT;
+use sp_utils::mpsc::{tracing_unbounded, TracingUnboundedReceiver, TracingUnboundedSender};
 
-use crate::{justification::GrandpaJustification, Error};
+use crate::justification::GrandpaJustification;
+use crate::Error;
 
 // Stream of justifications returned when subscribing.
 type JustificationStream<Block> = TracingUnboundedReceiver<GrandpaJustification<Block>>;
@@ -40,14 +41,16 @@ type SharedJustificationSenders<Block> = Arc<Mutex<Vec<JustificationSender<Block
 /// at the end of a Grandpa round.
 #[derive(Clone)]
 pub struct GrandpaJustificationSender<Block: BlockT> {
-	subscribers: SharedJustificationSenders<Block>,
+	subscribers: SharedJustificationSenders<Block>
 }
 
 impl<Block: BlockT> GrandpaJustificationSender<Block> {
 	/// The `subscribers` should be shared with a corresponding
 	/// `GrandpaJustificationStream`.
 	fn new(subscribers: SharedJustificationSenders<Block>) -> Self {
-		Self { subscribers }
+		Self {
+			subscribers,
+		}
 	}
 
 	/// Send out a notification to all subscribers that a new justification
@@ -80,7 +83,7 @@ impl<Block: BlockT> GrandpaJustificationSender<Block> {
 /// so it can be used to add more subscriptions.
 #[derive(Clone)]
 pub struct GrandpaJustificationStream<Block: BlockT> {
-	subscribers: SharedJustificationSenders<Block>,
+	subscribers: SharedJustificationSenders<Block>
 }
 
 impl<Block: BlockT> GrandpaJustificationStream<Block> {
@@ -97,7 +100,9 @@ impl<Block: BlockT> GrandpaJustificationStream<Block> {
 	/// The `subscribers` should be shared with a corresponding
 	/// `GrandpaJustificationSender`.
 	fn new(subscribers: SharedJustificationSenders<Block>) -> Self {
-		Self { subscribers }
+		Self {
+			subscribers,
+		}
 	}
 
 	/// Subscribe to a channel through which justifications are sent

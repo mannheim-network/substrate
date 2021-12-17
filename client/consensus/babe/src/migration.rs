@@ -16,12 +16,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{
-	AuthorityId, BabeAuthorityWeight, BabeEpochConfiguration, BabeGenesisConfiguration, Epoch,
-	NextEpochDescriptor, VRF_OUTPUT_LENGTH,
-};
-use codec::{Decode, Encode};
+use codec::{Encode, Decode};
 use sc_consensus_epochs::Epoch as EpochT;
+use crate::{
+	Epoch, AuthorityId, BabeAuthorityWeight, BabeGenesisConfiguration,
+	BabeEpochConfiguration, VRF_OUTPUT_LENGTH, NextEpochDescriptor,
+};
 use sp_consensus_slots::Slot;
 
 /// BABE epoch information, version 0.
@@ -43,7 +43,10 @@ impl EpochT for EpochV0 {
 	type NextEpochDescriptor = NextEpochDescriptor;
 	type Slot = Slot;
 
-	fn increment(&self, descriptor: NextEpochDescriptor) -> EpochV0 {
+	fn increment(
+		&self,
+		descriptor: NextEpochDescriptor
+	) -> EpochV0 {
 		EpochV0 {
 			epoch_index: self.epoch_index + 1,
 			start_slot: self.start_slot + self.duration,
@@ -71,7 +74,10 @@ impl EpochV0 {
 			duration: self.duration,
 			authorities: self.authorities,
 			randomness: self.randomness,
-			config: BabeEpochConfiguration { c: config.c, allowed_slots: config.allowed_slots },
+			config: BabeEpochConfiguration {
+				c: config.c,
+				allowed_slots: config.allowed_slots,
+			},
 		}
 	}
 }

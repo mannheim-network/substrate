@@ -19,6 +19,7 @@
 		["wss://telemetry.polkadot.io/submit/", 0]
 	],
 	"protocolId": "fir",
+	"consensusEngine": null,
 	"genesis": {
 		"raw": [
 			{

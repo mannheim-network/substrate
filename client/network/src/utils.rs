@@ -19,7 +19,8 @@
 use futures::{stream::unfold, FutureExt, Stream, StreamExt};
 use futures_timer::Delay;
 use linked_hash_set::LinkedHashSet;
-use std::{hash::Hash, num::NonZeroUsize, time::Duration};
+use std::time::Duration;
+use std::{hash::Hash, num::NonZeroUsize};
 
 /// Creates a stream that returns a new value every `duration`.
 pub fn interval(duration: Duration) -> impl Stream<Item = ()> + Unpin {
@@ -38,7 +39,10 @@ pub struct LruHashSet<T: Hash + Eq> {
 impl<T: Hash + Eq> LruHashSet<T> {
 	/// Create a new `LruHashSet` with the given (exclusive) limit.
 	pub fn new(limit: NonZeroUsize) -> Self {
-		Self { set: LinkedHashSet::new(), limit }
+		Self {
+			set: LinkedHashSet::new(),
+			limit,
+		}
 	}
 
 	/// Insert element into the set.
@@ -51,7 +55,7 @@ impl<T: Hash + Eq> LruHashSet<T> {
 			if self.set.len() == usize::from(self.limit) {
 				self.set.pop_front(); // remove oldest entry
 			}
-			return true
+			return true;
 		}
 		false
 	}

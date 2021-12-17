@@ -37,24 +37,25 @@
 //! The latter typically requires passing one of:
 //!
 //! - A [`LocalCallExecutor`] running the runtime locally.
-//! - A `RemoteCallExecutor` that will ask a third-party to perform the executions.
-//! - A `RemoteOrLocalCallExecutor` combination of the two.
+//! - A [`RemoteCallExecutor`](sc_client_api::light::RemoteCallRequest) that will ask a
+//! third-party to perform the executions.
+//! - A [`RemoteOrLocalCallExecutor`](sc_client_api::light::LocalOrRemote), combination of the two.
 //!
 //! Additionally, the fourth generic parameter of the `Client` is a marker type representing
 //! the ways in which the runtime can interface with the outside. Any code that builds a `Client`
 //! is responsible for putting the right marker.
 
-mod block_rules;
+pub mod genesis;
+pub mod light;
 mod call_executor;
 mod client;
-pub mod genesis;
+mod block_rules;
 mod wasm_override;
-mod wasm_substitutes;
 
 pub use self::{
 	call_executor::LocalCallExecutor,
 	client::{Client, ClientConfig},
 };
 
-#[cfg(feature = "test-helpers")]
-pub use self::client::{new_in_mem, new_with_backend};
+#[cfg(feature="test-helpers")]
+pub use self::client::{new_with_backend, new_in_mem};

@@ -21,8 +21,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{columns, Database, DbHash, Transaction};
-use log::error;
 use parking_lot::Mutex;
+use log::error;
 
 /// Offchain local storage
 #[derive(Clone)]
@@ -33,7 +33,8 @@ pub struct LocalStorage {
 
 impl std::fmt::Debug for LocalStorage {
 	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-		fmt.debug_struct("LocalStorage").finish()
+		fmt.debug_struct("LocalStorage")
+			.finish()
 	}
 }
 
@@ -48,7 +49,10 @@ impl LocalStorage {
 
 	/// Create offchain local storage with given `KeyValueDB` backend.
 	pub fn new(db: Arc<dyn Database<DbHash>>) -> Self {
-		Self { db, locks: Default::default() }
+		Self {
+			db,
+			locks: Default::default(),
+		}
 	}
 }
 
@@ -114,7 +118,11 @@ impl sp_core::offchain::OffchainStorage for LocalStorage {
 
 /// Concatenate the prefix and key to create an offchain key in the db.
 pub(crate) fn concatenate_prefix_and_key(prefix: &[u8], key: &[u8]) -> Vec<u8> {
-	prefix.iter().chain(key.into_iter()).cloned().collect()
+	prefix
+		.iter()
+		.chain(key.into_iter())
+		.cloned()
+		.collect()
 }
 
 #[cfg(test)]
@@ -147,4 +155,5 @@ mod tests {
 		assert_eq!(storage.get(prefix, key), Some(b"asd".to_vec()));
 		assert!(storage.locks.lock().is_empty(), "Locks map should be empty!");
 	}
+
 }

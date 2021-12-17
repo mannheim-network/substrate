@@ -25,16 +25,16 @@ use jsonrpc_core as rpc;
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// State RPC future Result type.
-pub type FutureResult<T> = jsonrpc_core::BoxFuture<Result<T>>;
+pub type FutureResult<T> = Box<dyn rpc::futures::Future<Item = T, Error = Error> + Send>;
 
 /// State RPC errors.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, derive_more::Display, derive_more::From)]
 pub enum Error {
 	/// Client error.
-	#[error("Client error: {}", .0)]
-	Client(#[from] Box<dyn std::error::Error + Send>),
+	#[display(fmt="Client error: {}", _0)]
+	Client(Box<dyn std::error::Error + Send>),
 	/// Provided block range couldn't be resolved to a list of blocks.
-	#[error("Cannot resolve a block range ['{:?}' ... '{:?}]. {}", .from, .to, .details)]
+	#[display(fmt = "Cannot resolve a block range ['{:?}' ... '{:?}]. {}", from, to, details)]
 	InvalidBlockRange {
 		/// Beginning of the block range.
 		from: String,
@@ -44,7 +44,7 @@ pub enum Error {
 		details: String,
 	},
 	/// Provided count exceeds maximum value.
-	#[error("count exceeds maximum value. value: {}, max: {}", .value, .max)]
+	#[display(fmt = "count exceeds maximum value. value: {}, max: {}", value, max)]
 	InvalidCount {
 		/// Provided value
 		value: u32,
@@ -52,8 +52,16 @@ pub enum Error {
 		max: u32,
 	},
 	/// Call to an unsafe RPC was denied.
-	#[error(transparent)]
-	UnsafeRpcCalled(#[from] crate::policy::UnsafeRpcError),
+	UnsafeRpcCalled(crate::policy::UnsafeRpcError),
+}
+
+impl std::error::Error for Error {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		match self {
+			Error::Client(ref err) => Some(&**err),
+			_ => None,
+		}
+	}
 }
 
 /// Base code for all state errors.

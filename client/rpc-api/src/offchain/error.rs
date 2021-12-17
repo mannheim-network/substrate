@@ -24,14 +24,22 @@ use jsonrpc_core as rpc;
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Offchain RPC errors.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, derive_more::Display, derive_more::From)]
 pub enum Error {
 	/// Unavailable storage kind error.
-	#[error("This storage kind is not available yet.")]
+	#[display(fmt="This storage kind is not available yet.")]
 	UnavailableStorageKind,
 	/// Call to an unsafe RPC was denied.
-	#[error(transparent)]
-	UnsafeRpcCalled(#[from] crate::policy::UnsafeRpcError),
+	UnsafeRpcCalled(crate::policy::UnsafeRpcError),
+}
+
+impl std::error::Error for Error {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		match self {
+			Self::UnsafeRpcCalled(err) => Some(err),
+			_ => None,
+		}
+	}
 }
 
 /// Base error code for all offchain errors.
@@ -42,7 +50,7 @@ impl From<Error> for rpc::Error {
 		match e {
 			Error::UnavailableStorageKind => rpc::Error {
 				code: rpc::ErrorCode::ServerError(BASE_ERROR + 1),
-				message: "This storage kind is not available yet".into(),
+				message: "This storage kind is not available yet" .into(),
 				data: None,
 			},
 			Error::UnsafeRpcCalled(e) => e.into(),

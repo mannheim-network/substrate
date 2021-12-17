@@ -19,8 +19,7 @@
 //! This file was not auto-generated.
 
 use frame_support::weights::{
-	constants::{RocksDbWeight as DbWeight, WEIGHT_PER_NANOS},
-	Weight,
+	Weight, constants::{WEIGHT_PER_NANOS, RocksDbWeight as DbWeight},
 };
 
 impl crate::WeightInfo for () {
@@ -35,6 +34,9 @@ impl crate::WeightInfo for () {
 		leaf_weight
 			.saturating_add(hash_weight)
 			.saturating_add(hook_weight)
-			.saturating_add(DbWeight::get().reads_writes(2 + peaks, 2 + peaks))
+			.saturating_add(DbWeight::get().reads_writes(
+				2 + peaks,
+				2 + peaks,
+			))
 	}
 }

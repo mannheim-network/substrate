@@ -18,9 +18,7 @@
 
 //! Prometheus basic proposer metrics.
 
-use prometheus_endpoint::{
-	register, Gauge, Histogram, HistogramOpts, PrometheusError, Registry, U64,
-};
+use prometheus_endpoint::{register, PrometheusError, Registry, Histogram, HistogramOpts, Gauge, U64};
 
 /// Optional shareable link to basic authorship metrics.
 #[derive(Clone, Default)]
@@ -28,13 +26,13 @@ pub struct MetricsLink(Option<Metrics>);
 
 impl MetricsLink {
 	pub fn new(registry: Option<&Registry>) -> Self {
-		Self(registry.and_then(|registry| {
-			Metrics::register(registry)
-				.map_err(|err| {
-					log::warn!("Failed to register proposer prometheus metrics: {}", err)
-				})
-				.ok()
-		}))
+		Self(
+			registry.and_then(|registry|
+				Metrics::register(registry)
+					.map_err(|err| log::warn!("Failed to register proposer prometheus metrics: {}", err))
+					.ok()
+			)
+		)
 	}
 
 	pub fn report<O>(&self, do_this: impl FnOnce(&Metrics) -> O) -> Option<O> {
@@ -47,8 +45,6 @@ impl MetricsLink {
 pub struct Metrics {
 	pub block_constructed: Histogram,
 	pub number_of_transactions: Gauge<U64>,
-	pub create_inherents_time: Histogram,
-	pub create_block_proposal_time: Histogram,
 }
 
 impl Metrics {
@@ -56,30 +52,16 @@ impl Metrics {
 		Ok(Self {
 			block_constructed: register(
 				Histogram::with_opts(HistogramOpts::new(
-					"substrate_proposer_block_constructed",
+					"proposer_block_constructed",
 					"Histogram of time taken to construct new block",
 				))?,
 				registry,
 			)?,
 			number_of_transactions: register(
 				Gauge::new(
-					"substrate_proposer_number_of_transactions",
+					"proposer_number_of_transactions",
 					"Number of transactions included in block",
 				)?,
-				registry,
-			)?,
-			create_inherents_time: register(
-				Histogram::with_opts(HistogramOpts::new(
-					"substrate_proposer_create_inherents_time",
-					"Histogram of time taken to execute create inherents",
-				))?,
-				registry,
-			)?,
-			create_block_proposal_time: register(
-				Histogram::with_opts(HistogramOpts::new(
-					"substrate_proposer_block_proposal_time",
-					"Histogram of time taken to construct a block and prepare it for proposal",
-				))?,
 				registry,
 			)?,
 		})

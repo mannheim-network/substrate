@@ -17,15 +17,17 @@
 
 //! Definition of a sandbox environment.
 
-use codec::{Decode, Encode};
+use codec::{Encode, Decode};
 use sp_std::vec::Vec;
 
 /// Error error that can be returned from host function.
-#[derive(Encode, Decode, crate::RuntimeDebug)]
+#[derive(Encode, Decode)]
+#[derive(crate::RuntimeDebug)]
 pub struct HostError;
 
 /// Describes an entity to define or import into the environment.
-#[derive(Clone, PartialEq, Eq, Encode, Decode, crate::RuntimeDebug)]
+#[derive(Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(crate::RuntimeDebug)]
 pub enum ExternEntity {
 	/// Function that is specified by an index in a default table of
 	/// a module that creates the sandbox.
@@ -42,7 +44,8 @@ pub enum ExternEntity {
 ///
 /// Each entry has a two-level name and description of an entity
 /// being defined.
-#[derive(Clone, PartialEq, Eq, Encode, Decode, crate::RuntimeDebug)]
+#[derive(Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(crate::RuntimeDebug)]
 pub struct Entry {
 	/// Module name of which corresponding entity being defined.
 	pub module_name: Vec<u8>,
@@ -53,7 +56,8 @@ pub struct Entry {
 }
 
 /// Definition of runtime that could be used by sandboxed code.
-#[derive(Clone, PartialEq, Eq, Encode, Decode, crate::RuntimeDebug)]
+#[derive(Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(crate::RuntimeDebug)]
 pub struct EnvironmentDefinition {
 	/// Vector of all entries in the environment definition.
 	pub entries: Vec<Entry>,
@@ -87,8 +91,8 @@ pub const ERR_EXECUTION: u32 = -3i32 as u32;
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use codec::Codec;
 	use std::fmt;
+	use codec::Codec;
 
 	fn roundtrip<S: Codec + PartialEq + fmt::Debug>(s: S) {
 		let encoded = s.encode();
@@ -97,22 +101,28 @@ mod tests {
 
 	#[test]
 	fn env_def_roundtrip() {
-		roundtrip(EnvironmentDefinition { entries: vec![] });
-
 		roundtrip(EnvironmentDefinition {
-			entries: vec![Entry {
-				module_name: b"kernel"[..].into(),
-				field_name: b"memory"[..].into(),
-				entity: ExternEntity::Memory(1337),
-			}],
+			entries: vec![],
 		});
 
 		roundtrip(EnvironmentDefinition {
-			entries: vec![Entry {
-				module_name: b"env"[..].into(),
-				field_name: b"abort"[..].into(),
-				entity: ExternEntity::Function(228),
-			}],
+			entries: vec![
+				Entry {
+					module_name: b"kernel"[..].into(),
+					field_name: b"memory"[..].into(),
+					entity: ExternEntity::Memory(1337),
+				},
+			],
+		});
+
+		roundtrip(EnvironmentDefinition {
+			entries: vec![
+				Entry {
+					module_name: b"env"[..].into(),
+					field_name: b"abort"[..].into(),
+					entity: ExternEntity::Function(228),
+				},
+			],
 		});
 	}
 }

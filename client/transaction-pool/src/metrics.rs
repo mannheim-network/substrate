@@ -27,13 +27,13 @@ pub struct MetricsLink(Arc<Option<Metrics>>);
 
 impl MetricsLink {
 	pub fn new(registry: Option<&Registry>) -> Self {
-		Self(Arc::new(registry.and_then(|registry| {
-			Metrics::register(registry)
-				.map_err(|err| {
-					log::warn!("Failed to register prometheus metrics: {}", err);
-				})
-				.ok()
-		})))
+		Self(Arc::new(
+			registry.and_then(|registry|
+				Metrics::register(registry)
+					.map_err(|err| { log::warn!("Failed to register prometheus metrics: {}", err); })
+					.ok()
+			)
+		))
 	}
 
 	pub fn report(&self, do_this: impl FnOnce(&Metrics)) {
@@ -56,28 +56,28 @@ impl Metrics {
 		Ok(Self {
 			submitted_transactions: register(
 				Counter::new(
-					"substrate_sub_txpool_submitted_transactions",
+					"sub_txpool_submitted_transactions",
 					"Total number of transactions submitted",
 				)?,
 				registry,
 			)?,
 			validations_invalid: register(
 				Counter::new(
-					"substrate_sub_txpool_validations_invalid",
+					"sub_txpool_validations_invalid",
 					"Total number of transactions that were removed from the pool as invalid",
 				)?,
 				registry,
 			)?,
 			block_transactions_pruned: register(
 				Counter::new(
-					"substrate_sub_txpool_block_transactions_pruned",
+					"sub_txpool_block_transactions_pruned",
 					"Total number of transactions that was requested to be pruned by block events",
 				)?,
 				registry,
 			)?,
 			block_transactions_resubmitted: register(
 				Counter::new(
-					"substrate_sub_txpool_block_transactions_resubmitted",
+					"sub_txpool_block_transactions_resubmitted",
 					"Total number of transactions that was requested to be resubmitted by block events",
 				)?,
 				registry,
@@ -98,14 +98,14 @@ impl ApiMetrics {
 		Ok(Self {
 			validations_scheduled: register(
 				Counter::new(
-					"substrate_sub_txpool_validations_scheduled",
+					"sub_txpool_validations_scheduled",
 					"Total number of transactions scheduled for validation",
 				)?,
 				registry,
 			)?,
 			validations_finished: register(
 				Counter::new(
-					"substrate_sub_txpool_validations_finished",
+					"sub_txpool_validations_finished",
 					"Total number of transactions that finished validation",
 				)?,
 				registry,

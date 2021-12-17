@@ -17,22 +17,38 @@
 
 //! Benchmarks for the MMR pallet.
 
-use crate::*;
-use frame_benchmarking::benchmarks_instance_pallet;
-use frame_support::traits::OnInitialize;
+#![cfg_attr(not(feature = "std"), no_std)]
 
-benchmarks_instance_pallet! {
+use crate::*;
+use frame_support::traits::OnInitialize;
+use frame_benchmarking::benchmarks;
+use sp_std::prelude::*;
+
+benchmarks! {
 	on_initialize {
 		let x in 1 .. 1_000;
 
-		let leaves = x as NodeIndex;
+		let leaves = x as u64;
 	}: {
 		for b in 0..leaves {
-			Pallet::<T, I>::on_initialize((b as u32).into());
+			Module::<T>::on_initialize((b as u32).into());
 		}
 	} verify {
-		assert_eq!(crate::NumberOfLeaves::<T, I>::get(), leaves);
+		assert_eq!(crate::NumberOfLeaves::<DefaultInstance>::get(), leaves);
 	}
+}
 
-	impl_benchmark_test_suite!(Pallet, crate::tests::new_test_ext(), crate::mock::Test);
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::mock::*;
+	use crate::tests::new_test_ext;
+	use frame_support::assert_ok;
+
+	#[test]
+	fn test_benchmarks() {
+		new_test_ext().execute_with(|| {
+			assert_ok!(test_benchmark_on_initialize::<Test>());
+		})
+	}
 }

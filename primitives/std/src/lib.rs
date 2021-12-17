@@ -19,14 +19,11 @@
 //! or client/alloc to be used with any code that depends on the runtime.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(
-	feature = "std",
-	doc = "Substrate runtime standard library as compiled when linked with Rust's standard library."
-)]
-#![cfg_attr(
-	not(feature = "std"),
-	doc = "Substrate's runtime standard library as compiled without Rust's standard library."
-)]
+
+#![cfg_attr(feature = "std",
+   doc = "Substrate runtime standard library as compiled when linked with Rust's standard library.")]
+#![cfg_attr(not(feature = "std"),
+   doc = "Substrate's runtime standard library as compiled without Rust's standard library.")]
 
 #[macro_export]
 macro_rules! map {
@@ -58,7 +55,7 @@ macro_rules! if_std {
 #[cfg(not(feature = "std"))]
 #[macro_export]
 macro_rules! if_std {
-	( $( $code:tt )* ) => {};
+	( $( $code:tt )* ) => {}
 }
 
 #[cfg(feature = "std")]
@@ -66,6 +63,7 @@ include!("../with_std.rs");
 
 #[cfg(not(feature = "std"))]
 include!("../without_std.rs");
+
 
 /// A target for `core::write!` macro - constructs a string in memory.
 #[derive(Default)]
@@ -94,14 +92,10 @@ impl Writer {
 ///
 /// This should include only things which are in the normal std prelude.
 pub mod prelude {
-	pub use crate::{
-		boxed::Box,
-		clone::Clone,
-		cmp::{Eq, PartialEq, Reverse},
-		convert::{TryFrom, TryInto},
-		iter::IntoIterator,
-		vec::Vec,
-	};
+	pub use crate::vec::Vec;
+	pub use crate::boxed::Box;
+	pub use crate::cmp::{Eq, PartialEq, Reverse};
+	pub use crate::clone::Clone;
 
 	// Re-export `vec!` macro here, but not in `std` mode, since
 	// std's prelude already brings `vec!` into the scope.

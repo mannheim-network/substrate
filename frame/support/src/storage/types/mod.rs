@@ -18,34 +18,24 @@
 //! Storage types to build abstraction on storage, they implements storage traits such as
 //! StorageMap and others.
 
-use crate::metadata::{StorageEntryMetadata, StorageEntryModifier};
 use codec::FullCodec;
-use sp_std::prelude::*;
+use frame_metadata::{DefaultByte, StorageEntryModifier};
 
-mod counted_map;
-mod double_map;
-mod key;
-mod map;
-mod nmap;
 mod value;
+mod map;
+mod double_map;
 
-pub use counted_map::{CountedStorageMap, CountedStorageMapInstance};
-pub use double_map::StorageDoubleMap;
-pub use key::{
-	EncodeLikeTuple, HasKeyPrefix, HasReversibleKeyPrefix, Key, KeyGenerator,
-	KeyGeneratorMaxEncodedLen, ReversibleKeyGenerator, TupleToEncodedIter,
-};
-pub use map::StorageMap;
-pub use nmap::StorageNMap;
-pub use value::StorageValue;
+pub use value::{StorageValue, StorageValueMetadata};
+pub use map::{StorageMap, StorageMapMetadata};
+pub use double_map::{StorageDoubleMap, StorageDoubleMapMetadata};
 
 /// Trait implementing how the storage optional value is converted into the queried type.
 ///
 /// It is implemented by:
-/// * `OptionQuery` which convert an optional value to an optional value, user when querying storage
-///   will get an optional value.
-/// * `ValueQuery` which convert an optional value to a value, user when querying storage will get a
-///   value.
+/// * `OptionQuery` which convert an optional value to an optional value, user when querying
+///   storage will get an optional value.
+/// * `ValueQuery` which convert an optional value to a value, user when querying storage will get
+///   a value.
 pub trait QueryKindTrait<Value, OnEmpty> {
 	/// Metadata for the storage kind.
 	const METADATA: StorageEntryModifier;
@@ -105,10 +95,14 @@ where
 	}
 }
 
-/// Build the metadata of a storage.
-///
-/// Implemented by each of the storage types: value, map, countedmap, doublemap and nmap.
-pub trait StorageEntryMetadataBuilder {
-	/// Build into `entries` the storage metadata entries of a storage given some `docs`.
-	fn build_metadata(doc: Vec<&'static str>, entries: &mut Vec<StorageEntryMetadata>);
+/// A helper struct which implements DefaultByte using `Get<Value>` and encode it.
+struct OnEmptyGetter<Value, OnEmpty>(core::marker::PhantomData<(Value, OnEmpty)>);
+impl<Value: FullCodec, OnEmpty: crate::traits::Get<Value>> DefaultByte
+	for OnEmptyGetter<Value, OnEmpty>
+{
+	fn default_byte(&self) -> sp_std::vec::Vec<u8> {
+		OnEmpty::get().encode()
+	}
 }
+unsafe impl <Value, OnEmpty: crate::traits::Get<Value>> Send for OnEmptyGetter<Value, OnEmpty> {}
+unsafe impl <Value, OnEmpty: crate::traits::Get<Value>> Sync for OnEmptyGetter<Value, OnEmpty> {}

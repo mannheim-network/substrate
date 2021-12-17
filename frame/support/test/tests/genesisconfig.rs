@@ -40,5 +40,7 @@ impl Config for Test {}
 
 #[test]
 fn init_genesis_config() {
-	GenesisConfig::<Test> { t: Default::default() };
+	GenesisConfig::<Test> {
+		t: Default::default(),
+	};
 }

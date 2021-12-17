@@ -21,20 +21,25 @@
 
 use super::*;
 
-use frame_benchmarking::{account, benchmarks, whitelist, BenchmarkError, BenchmarkResult};
-use frame_support::{
-	dispatch::{DispatchResultWithPostInfo, UnfilteredDispatchable},
-	traits::OnInitialize,
-};
 use frame_system::RawOrigin;
+use frame_benchmarking::{benchmarks, account};
+use frame_support::traits::OnInitialize;
 
-use crate::Pallet as Elections;
+use crate::Module as Elections;
 
 const BALANCE_FACTOR: u32 = 250;
 const MAX_VOTERS: u32 = 500;
 const MAX_CANDIDATES: u32 = 200;
 
 type Lookup<T> = <<T as frame_system::Config>::Lookup as StaticLookup>::Source;
+
+macro_rules! whitelist {
+	($acc:ident) => {
+		frame_benchmarking::benchmarking::add_to_whitelist(
+			frame_system::Account::<T>::hashed_key_for(&$acc).into()
+		);
+	};
+}
 
 /// grab new account with infinite balance.
 fn endowed_account<T: Config>(name: &'static str, index: u32) -> T::AccountId {
@@ -65,58 +70,53 @@ fn candidate_count<T: Config>() -> u32 {
 }
 
 /// Add `c` new candidates.
-fn submit_candidates<T: Config>(
-	c: u32,
-	prefix: &'static str,
-) -> Result<Vec<T::AccountId>, &'static str> {
-	(0..c)
-		.map(|i| {
-			let account = endowed_account::<T>(prefix, i);
-			<Elections<T>>::submit_candidacy(
-				RawOrigin::Signed(account.clone()).into(),
-				candidate_count::<T>(),
-			)
-			.map_err(|_| "failed to submit candidacy")?;
-			Ok(account)
-		})
-		.collect::<Result<_, _>>()
+fn submit_candidates<T: Config>(c: u32, prefix: &'static str)
+	-> Result<Vec<T::AccountId>, &'static str>
+{
+	(0..c).map(|i| {
+		let account = endowed_account::<T>(prefix, i);
+		<Elections<T>>::submit_candidacy(
+			RawOrigin::Signed(account.clone()).into(),
+			candidate_count::<T>(),
+		).map_err(|_| "failed to submit candidacy")?;
+		Ok(account)
+	}).collect::<Result<_, _>>()
 }
 
 /// Add `c` new candidates with self vote.
-fn submit_candidates_with_self_vote<T: Config>(
-	c: u32,
-	prefix: &'static str,
-) -> Result<Vec<T::AccountId>, &'static str> {
+fn submit_candidates_with_self_vote<T: Config>(c: u32, prefix: &'static str)
+	-> Result<Vec<T::AccountId>, &'static str>
+{
 	let candidates = submit_candidates::<T>(c, prefix)?;
 	let stake = default_stake::<T>(BALANCE_FACTOR);
-	let _ = candidates
-		.iter()
-		.map(|c| submit_voter::<T>(c.clone(), vec![c.clone()], stake).map(|_| ()))
-		.collect::<Result<_, _>>()?;
+	let _ = candidates.iter().map(|c|
+		submit_voter::<T>(c.clone(), vec![c.clone()], stake).map(|_| ())
+	).collect::<Result<_, _>>()?;
 	Ok(candidates)
 }
 
+
 /// Submit one voter.
-fn submit_voter<T: Config>(
-	caller: T::AccountId,
-	votes: Vec<T::AccountId>,
-	stake: BalanceOf<T>,
-) -> DispatchResultWithPostInfo {
+fn submit_voter<T: Config>(caller: T::AccountId, votes: Vec<T::AccountId>, stake: BalanceOf<T>)
+	-> frame_support::dispatch::DispatchResult
+{
 	<Elections<T>>::vote(RawOrigin::Signed(caller).into(), votes, stake)
 }
 
 /// create `num_voter` voters who randomly vote for at most `votes` of `all_candidates` if
 /// available.
-fn distribute_voters<T: Config>(
-	mut all_candidates: Vec<T::AccountId>,
-	num_voters: u32,
-	votes: usize,
-) -> Result<(), &'static str> {
+fn distribute_voters<T: Config>(mut all_candidates: Vec<T::AccountId>, num_voters: u32, votes: usize)
+	-> Result<(), &'static str>
+{
 	let stake = default_stake::<T>(BALANCE_FACTOR);
 	for i in 0..num_voters {
 		// to ensure that votes are different
 		all_candidates.rotate_left(1);
-		let votes = all_candidates.iter().cloned().take(votes).collect::<Vec<_>>();
+		let votes = all_candidates
+			.iter()
+			.cloned()
+			.take(votes)
+			.collect::<Vec<_>>();
 		let voter = endowed_account::<T>("voter", i);
 		submit_voter::<T>(voter, votes, stake)?;
 	}
@@ -135,11 +135,13 @@ fn fill_seats_up_to<T: Config>(m: u32) -> Result<Vec<T::AccountId>, &'static str
 		m as usize,
 		"wrong number of members and runners-up",
 	);
-	Ok(<Elections<T>>::members()
-		.into_iter()
-		.map(|m| m.who)
-		.chain(<Elections<T>>::runners_up().into_iter().map(|r| r.who))
-		.collect())
+	Ok(
+		<Elections<T>>::members()
+			.into_iter()
+			.map(|m| m.who)
+			.chain(<Elections<T>>::runners_up().into_iter().map(|r| r.who))
+			.collect()
+	)
 }
 
 /// removes all the storage items to reverse any genesis state.
@@ -147,7 +149,7 @@ fn clean<T: Config>() {
 	<Members<T>>::kill();
 	<Candidates<T>>::kill();
 	<RunnersUp<T>>::kill();
-	<Voting<T>>::remove_all(None);
+	<Voting<T>>::remove_all();
 }
 
 benchmarks! {
@@ -335,16 +337,9 @@ benchmarks! {
 		}
 	}
 
-	// We use the max block weight for this extrinsic for now. See below.
-	remove_member_without_replacement {}: {
-		Err(BenchmarkError::Override(
-			BenchmarkResult::from_weight(T::BlockWeights::get().max_block)
-		))?;
-	}
-
 	// -- Root ones
 	#[extra] // this calls into phragmen and consumes a full block for now.
-	remove_member_without_replacement_extra {
+	remove_member_without_replacement {
 		// worse case is when we remove a member and we have no runner as a replacement. This
 		// triggers phragmen again. The only parameter is how many candidates will compete for the
 		// new slot.
@@ -402,23 +397,15 @@ benchmarks! {
 
 		let _ = fill_seats_up_to::<T>(m)?;
 		let removing = as_lookup::<T>(<Elections<T>>::members_ids()[0].clone());
-		let who = T::Lookup::lookup(removing.clone()).expect("member was added above");
-		let call = Call::<T>::remove_member { who: removing, has_replacement: false }.encode();
 	}: {
 		assert_eq!(
-			<Call<T> as Decode>::decode(&mut &*call)
-				.expect("call is encoded above, encoding must be correct")
-				.dispatch_bypass_filter(RawOrigin::Root.into())
-				.unwrap_err()
-				.error,
+			<Elections<T>>::remove_member(RawOrigin::Root.into(), removing, false).unwrap_err().error,
 			Error::<T>::InvalidReplacement.into(),
 		);
 	}
 	verify {
 		// must still have enough members.
 		assert_eq!(<Elections<T>>::members().len() as u32, T::DesiredMembers::get());
-		// on fail, `who` must still be a member
-		assert!(<Elections<T>>::members_ids().contains(&who));
 		#[cfg(test)]
 		{
 			// reset members in between benchmark tests.
@@ -547,11 +534,86 @@ benchmarks! {
 			MEMBERS.with(|m| *m.borrow_mut() = vec![]);
 		}
 	}
+}
 
-	impl_benchmark_test_suite!(
-		Elections,
-		crate::tests::ExtBuilder::default().desired_members(13).desired_runners_up(7),
-		crate::tests::Test,
-		exec_name = build_and_execute,
-	);
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::tests::{ExtBuilder, Test};
+	use frame_support::assert_ok;
+
+	#[test]
+	fn test_benchmarks_elections_phragmen() {
+		ExtBuilder::default()
+			.desired_members(13)
+			.desired_runners_up(7)
+			.build_and_execute(|| {
+				assert_ok!(test_benchmark_vote_equal::<Test>());
+			});
+
+		ExtBuilder::default()
+			.desired_members(13)
+			.desired_runners_up(7)
+			.build_and_execute(|| {
+				assert_ok!(test_benchmark_vote_more::<Test>());
+			});
+
+		ExtBuilder::default()
+			.desired_members(13)
+			.desired_runners_up(7)
+			.build_and_execute(|| {
+				assert_ok!(test_benchmark_vote_less::<Test>());
+			});
+
+		ExtBuilder::default()
+			.desired_members(13)
+			.desired_runners_up(7)
+			.build_and_execute(|| {
+				assert_ok!(test_benchmark_remove_voter::<Test>());
+			});
+
+		ExtBuilder::default().desired_members(13).desired_runners_up(7).build_and_execute(|| {
+			assert_ok!(test_benchmark_submit_candidacy::<Test>());
+		});
+
+		ExtBuilder::default().desired_members(13).desired_runners_up(7).build_and_execute(|| {
+			assert_ok!(test_benchmark_renounce_candidacy_candidate::<Test>());
+		});
+
+		ExtBuilder::default().desired_members(13).desired_runners_up(7).build_and_execute(|| {
+			assert_ok!(test_benchmark_renounce_candidacy_runners_up::<Test>());
+		});
+
+		ExtBuilder::default().desired_members(13).desired_runners_up(7).build_and_execute(|| {
+			assert_ok!(test_benchmark_renounce_candidacy_members::<Test>());
+		});
+
+		ExtBuilder::default().desired_members(13).desired_runners_up(7).build_and_execute(|| {
+			assert_ok!(test_benchmark_remove_member_without_replacement::<Test>());
+		});
+
+		ExtBuilder::default().desired_members(13).desired_runners_up(7).build_and_execute(|| {
+			assert_ok!(test_benchmark_remove_member_with_replacement::<Test>());
+		});
+
+		ExtBuilder::default().desired_members(13).desired_runners_up(7).build_and_execute(|| {
+			assert_ok!(test_benchmark_clean_defunct_voters::<Test>());
+		});
+
+		ExtBuilder::default().desired_members(13).desired_runners_up(7).build_and_execute(|| {
+			assert_ok!(test_benchmark_election_phragmen::<Test>());
+		});
+
+		ExtBuilder::default().desired_members(13).desired_runners_up(7).build_and_execute(|| {
+			assert_ok!(test_benchmark_election_phragmen::<Test>());
+		});
+
+		ExtBuilder::default().desired_members(13).desired_runners_up(7).build_and_execute(|| {
+			assert_ok!(test_benchmark_election_phragmen_c_e::<Test>());
+		});
+
+		ExtBuilder::default().desired_members(13).desired_runners_up(7).build_and_execute(|| {
+			assert_ok!(test_benchmark_election_phragmen_v::<Test>());
+		});
+	}
 }

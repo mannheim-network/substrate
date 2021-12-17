@@ -17,16 +17,15 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use libp2p::{
-	bandwidth,
+	PeerId, Transport,
 	core::{
-		self,
-		either::EitherTransport,
-		muxing::StreamMuxerBox,
-		transport::{Boxed, OptionalTransport},
-		upgrade,
+		self, either::EitherTransport, muxing::StreamMuxerBox,
+		transport::{Boxed, OptionalTransport}, upgrade
 	},
-	dns, identity, mplex, noise, tcp, websocket, PeerId, Transport,
+	mplex, identity, bandwidth, wasm_ext, noise
 };
+#[cfg(not(target_os = "unknown"))]
+use libp2p::{tcp, dns, websocket};
 use std::{sync::Arc, time::Duration};
 
 pub use self::bandwidth::BandwidthSinks;
@@ -49,46 +48,55 @@ pub use self::bandwidth::BandwidthSinks;
 pub fn build_transport(
 	keypair: identity::Keypair,
 	memory_only: bool,
+	wasm_external_transport: Option<wasm_ext::ExtTransport>,
 	yamux_window_size: Option<u32>,
 	yamux_maximum_buffer_size: usize,
 ) -> (Boxed<(PeerId, StreamMuxerBox)>, Arc<BandwidthSinks>) {
 	// Build the base layer of the transport.
-	let transport = if !memory_only {
+	let transport = if let Some(t) = wasm_external_transport {
+		OptionalTransport::some(t)
+	} else {
+		OptionalTransport::none()
+	};
+	#[cfg(not(target_os = "unknown"))]
+	let transport = transport.or_transport(if !memory_only {
 		let desktop_trans = tcp::TcpConfig::new().nodelay(true);
-		let desktop_trans =
-			websocket::WsConfig::new(desktop_trans.clone()).or_transport(desktop_trans);
-		let dns_init = futures::executor::block_on(dns::DnsConfig::system(desktop_trans.clone()));
-		EitherTransport::Left(if let Ok(dns) = dns_init {
+		let desktop_trans = websocket::WsConfig::new(desktop_trans.clone())
+			.or_transport(desktop_trans);
+		OptionalTransport::some(if let Ok(dns) = dns::DnsConfig::new(desktop_trans.clone()) {
 			EitherTransport::Left(dns)
 		} else {
-			EitherTransport::Right(desktop_trans.map_err(dns::DnsErr::Transport))
+			EitherTransport::Right(desktop_trans.map_err(dns::DnsErr::Underlying))
 		})
 	} else {
-		EitherTransport::Right(OptionalTransport::some(
-			libp2p::core::transport::MemoryTransport::default(),
-		))
-	};
+		OptionalTransport::none()
+	});
+
+	let transport = transport.or_transport(if memory_only {
+		OptionalTransport::some(libp2p::core::transport::MemoryTransport::default())
+	} else {
+		OptionalTransport::none()
+	});
 
 	let (transport, bandwidth) = bandwidth::BandwidthLogging::new(transport);
 
-	let authentication_config =
-		{
-			// For more information about these two panics, see in "On the Importance of
-			// Checking Cryptographic Protocols for Faults" by Dan Boneh, Richard A. DeMillo,
-			// and Richard J. Lipton.
-			let noise_keypair = noise::Keypair::<noise::X25519Spec>::new().into_authentic(&keypair)
+	let authentication_config = {
+		// For more information about these two panics, see in "On the Importance of
+		// Checking Cryptographic Protocols for Faults" by Dan Boneh, Richard A. DeMillo,
+		// and Richard J. Lipton.
+		let noise_keypair = noise::Keypair::<noise::X25519Spec>::new().into_authentic(&keypair)
 			.expect("can only fail in case of a hardware bug; since this signing is performed only \
 				once and at initialization, we're taking the bet that the inconvenience of a very \
 				rare panic here is basically zero");
 
-			// Legacy noise configurations for backward compatibility.
-			let mut noise_legacy = noise::LegacyConfig::default();
-			noise_legacy.recv_legacy_handshake = true;
+		// Legacy noise configurations for backward compatibility.
+		let mut noise_legacy = noise::LegacyConfig::default();
+		noise_legacy.recv_legacy_handshake = true;
 
-			let mut xx_config = noise::NoiseConfig::xx(noise_keypair);
-			xx_config.set_legacy_config(noise_legacy.clone());
-			xx_config.into_authenticated()
-		};
+		let mut xx_config = noise::NoiseConfig::xx(noise_keypair);
+		xx_config.set_legacy_config(noise_legacy.clone());
+		xx_config.into_authenticated()
+	};
 
 	let multiplexing_config = {
 		let mut mplex_config = mplex::MplexConfig::new();
@@ -108,8 +116,7 @@ pub fn build_transport(
 		core::upgrade::SelectUpgrade::new(yamux_config, mplex_config)
 	};
 
-	let transport = transport
-		.upgrade(upgrade::Version::V1Lazy)
+	let transport = transport.upgrade(upgrade::Version::V1Lazy)
 		.authenticate(authentication_config)
 		.multiplex(multiplexing_config)
 		.timeout(Duration::from_secs(20))

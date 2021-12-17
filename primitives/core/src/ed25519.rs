@@ -22,32 +22,28 @@
 #[cfg(feature = "full_crypto")]
 use sp_std::vec::Vec;
 
-use crate::{
-	crypto::ByteArray,
-	hash::{H256, H512},
-};
-use codec::{Decode, Encode, MaxEncodedLen};
-use scale_info::TypeInfo;
+use crate::{hash::H256, hash::H512};
+use codec::{Encode, Decode};
 
-#[cfg(feature = "std")]
-use crate::crypto::Ss58Codec;
-use crate::crypto::{
-	CryptoType, CryptoTypeId, CryptoTypePublicPair, Derive, Public as TraitPublic, UncheckedFrom,
-};
 #[cfg(feature = "full_crypto")]
-use crate::crypto::{DeriveJunction, Pair as TraitPair, SecretStringError};
-#[cfg(feature = "std")]
-use bip39::{Language, Mnemonic, MnemonicType};
+use blake2_rfc;
 #[cfg(feature = "full_crypto")]
 use core::convert::TryFrom;
 #[cfg(feature = "full_crypto")]
 use ed25519_dalek::{Signer as _, Verifier as _};
 #[cfg(feature = "std")]
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use substrate_bip39::seed_from_entropy;
+#[cfg(feature = "std")]
+use bip39::{Mnemonic, Language, MnemonicType};
+#[cfg(feature = "full_crypto")]
+use crate::crypto::{Pair as TraitPair, DeriveJunction, SecretStringError};
+#[cfg(feature = "std")]
+use crate::crypto::Ss58Codec;
+#[cfg(feature = "std")]
+use serde::{de, Serializer, Serialize, Deserializer, Deserialize};
+use crate::crypto::{Public as TraitPublic, CryptoTypePublicPair, UncheckedFrom, CryptoType, Derive, CryptoTypeId};
 use sp_runtime_interface::pass_by::PassByInner;
 use sp_std::ops::Deref;
-#[cfg(feature = "std")]
-use substrate_bip39::seed_from_entropy;
 
 /// An identifier used to match public keys against ed25519 keys
 pub const CRYPTO_ID: CryptoTypeId = CryptoTypeId(*b"ed25");
@@ -60,19 +56,7 @@ type Seed = [u8; 32];
 
 /// A public key.
 #[cfg_attr(feature = "full_crypto", derive(Hash))]
-#[derive(
-	PartialEq,
-	Eq,
-	PartialOrd,
-	Ord,
-	Clone,
-	Copy,
-	Encode,
-	Decode,
-	PassByInner,
-	MaxEncodedLen,
-	TypeInfo,
-)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Encode, Decode, Default, PassByInner)]
 pub struct Public(pub [u8; 32]);
 
 /// A key pair.
@@ -83,9 +67,9 @@ pub struct Pair(ed25519_dalek::Keypair);
 impl Clone for Pair {
 	fn clone(&self) -> Self {
 		Pair(ed25519_dalek::Keypair {
-			public: self.0.public,
+			public: self.0.public.clone(),
 			secret: ed25519_dalek::SecretKey::from_bytes(self.0.secret.as_bytes())
-				.expect("key is always the correct size; qed"),
+				.expect("key is always the correct size; qed")
 		})
 	}
 }
@@ -120,12 +104,13 @@ impl sp_std::convert::TryFrom<&[u8]> for Public {
 	type Error = ();
 
 	fn try_from(data: &[u8]) -> Result<Self, Self::Error> {
-		if data.len() != Self::LEN {
-			return Err(())
+		if data.len() == 32 {
+			let mut inner = [0u8; 32];
+			inner.copy_from_slice(data);
+			Ok(Public(inner))
+		} else {
+			Err(())
 		}
-		let mut r = [0u8; Self::LEN];
-		r.copy_from_slice(data);
-		Ok(Self::unchecked_from(r))
 	}
 }
 
@@ -191,27 +176,21 @@ impl sp_std::fmt::Debug for Public {
 
 #[cfg(feature = "std")]
 impl Serialize for Public {
-	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-	where
-		S: Serializer,
-	{
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
 		serializer.serialize_str(&self.to_ss58check())
 	}
 }
 
 #[cfg(feature = "std")]
 impl<'de> Deserialize<'de> for Public {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-	where
-		D: Deserializer<'de>,
-	{
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
 		Public::from_ss58check(&String::deserialize(deserializer)?)
 			.map_err(|e| de::Error::custom(format!("{:?}", e)))
 	}
 }
 
 /// A signature (a 512-bit value).
-#[derive(Encode, Decode, PassByInner, TypeInfo)]
+#[derive(Encode, Decode, PassByInner)]
 pub struct Signature(pub [u8; 64]);
 
 impl sp_std::convert::TryFrom<&[u8]> for Signature {
@@ -230,24 +209,18 @@ impl sp_std::convert::TryFrom<&[u8]> for Signature {
 
 #[cfg(feature = "std")]
 impl Serialize for Signature {
-	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-	where
-		S: Serializer,
-	{
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
 		serializer.serialize_str(&hex::encode(self))
 	}
 }
 
 #[cfg(feature = "std")]
 impl<'de> Deserialize<'de> for Signature {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-	where
-		D: Deserializer<'de>,
-	{
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
 		let signature_hex = hex::decode(&String::deserialize(deserializer)?)
 			.map_err(|e| de::Error::custom(format!("{:?}", e)))?;
-		Signature::try_from(signature_hex.as_ref())
-			.map_err(|e| de::Error::custom(format!("{:?}", e)))
+		Ok(Signature::try_from(signature_hex.as_ref())
+			.map_err(|e| de::Error::custom(format!("{:?}", e)))?)
 	}
 }
 
@@ -256,6 +229,12 @@ impl Clone for Signature {
 		let mut r = [0u8; 64];
 		r.copy_from_slice(&self.0[..]);
 		Signature(r)
+	}
+}
+
+impl Default for Signature {
+	fn default() -> Self {
+		Signature([0u8; 64])
 	}
 }
 
@@ -313,12 +292,6 @@ impl sp_std::fmt::Debug for Signature {
 impl sp_std::hash::Hash for Signature {
 	fn hash<H: sp_std::hash::Hasher>(&self, state: &mut H) {
 		sp_std::hash::Hash::hash(&self.0[..], state);
-	}
-}
-
-impl UncheckedFrom<[u8; 64]> for Signature {
-	fn unchecked_from(data: [u8; 64]) -> Signature {
-		Signature(data)
 	}
 }
 
@@ -401,11 +374,17 @@ impl Public {
 	}
 }
 
-impl ByteArray for Public {
-	const LEN: usize = 32;
-}
-
 impl TraitPublic for Public {
+	/// A new instance from the given slice that should be 32 bytes long.
+	///
+	/// NOTE: No checking goes on to ensure this is a real public key. Only use it if
+	/// you are certain that the array actually is a pubkey. GIGO!
+	fn from_slice(data: &[u8]) -> Self {
+		let mut r = [0u8; 32];
+		r.copy_from_slice(data);
+		Public(r)
+	}
+
 	fn to_public_crypto_pair(&self) -> CryptoTypePublicPair {
 		CryptoTypePublicPair(CRYPTO_ID, self.to_raw_vec())
 	}
@@ -458,22 +437,21 @@ impl TraitPair for Pair {
 		let phrase = mnemonic.phrase();
 		let (pair, seed) = Self::from_phrase(phrase, password)
 			.expect("All phrases generated by Mnemonic are valid; qed");
-		(pair, phrase.to_owned(), seed)
+		(
+			pair,
+			phrase.to_owned(),
+			seed,
+		)
 	}
 
 	/// Generate key pair from given recovery phrase and password.
 	#[cfg(feature = "std")]
-	fn from_phrase(
-		phrase: &str,
-		password: Option<&str>,
-	) -> Result<(Pair, Seed), SecretStringError> {
+	fn from_phrase(phrase: &str, password: Option<&str>) -> Result<(Pair, Seed), SecretStringError> {
 		let big_seed = seed_from_entropy(
 			Mnemonic::from_phrase(phrase, Language::English)
-				.map_err(|_| SecretStringError::InvalidPhrase)?
-				.entropy(),
+				.map_err(|_| SecretStringError::InvalidPhrase)?.entropy(),
 			password.unwrap_or(""),
-		)
-		.map_err(|_| SecretStringError::InvalidSeed)?;
+		).map_err(|_| SecretStringError::InvalidSeed)?;
 		let mut seed = Seed::default();
 		seed.copy_from_slice(&big_seed[0..32]);
 		Self::from_seed_slice(&big_seed[0..32]).map(|x| (x, seed))
@@ -498,8 +476,7 @@ impl TraitPair for Pair {
 	}
 
 	/// Derive a child key from a series of given junctions.
-	fn derive<Iter: Iterator<Item = DeriveJunction>>(
-		&self,
+	fn derive<Iter: Iterator<Item=DeriveJunction>>(&self,
 		path: Iter,
 		_seed: Option<Seed>,
 	) -> Result<(Pair, Option<Seed>), DeriveError> {
@@ -544,10 +521,13 @@ impl TraitPair for Pair {
 
 		let sig = match ed25519_dalek::Signature::try_from(sig) {
 			Ok(s) => s,
-			Err(_) => return false,
+			Err(_) => return false
 		};
 
-		public_key.verify(message.as_ref(), &sig).is_ok()
+		match public_key.verify(message.as_ref(), &sig) {
+			Ok(_) => true,
+			_ => false,
+		}
 	}
 
 	/// Return a vec filled with raw data.
@@ -568,7 +548,7 @@ impl Pair {
 	#[cfg(feature = "std")]
 	pub fn from_legacy_string(s: &str, password_override: Option<&str>) -> Pair {
 		Self::from_string(s, password_override).unwrap_or_else(|_| {
-			let mut padded_seed: Seed = [b' '; 32];
+			let mut padded_seed: Seed = [' ' as u8; 32];
 			let len = s.len().min(32);
 			padded_seed[..len].copy_from_slice(&s.as_bytes()[..len]);
 			Self::from_seed(&padded_seed)
@@ -594,17 +574,15 @@ impl CryptoType for Pair {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::crypto::DEV_PHRASE;
 	use hex_literal::hex;
+	use crate::crypto::DEV_PHRASE;
 	use serde_json;
 
 	#[test]
 	fn default_phrase_should_be_used() {
 		assert_eq!(
 			Pair::from_string("//Alice///password", None).unwrap().public(),
-			Pair::from_string(&format!("{}//Alice", DEV_PHRASE), Some("password"))
-				.unwrap()
-				.public(),
+			Pair::from_string(&format!("{}//Alice", DEV_PHRASE), Some("password")).unwrap().public(),
 		);
 	}
 
@@ -623,20 +601,17 @@ mod test {
 
 	#[test]
 	fn test_vector_should_work() {
-		let pair = Pair::from_seed(&hex!(
-			"9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
-		));
-		let public = pair.public();
-		assert_eq!(
-			public,
-			Public::from_raw(hex!(
-				"d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
-			))
+		let pair = Pair::from_seed(
+			&hex!("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
 		);
+		let public = pair.public();
+		assert_eq!(public, Public::from_raw(
+			hex!("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+		));
 		let message = b"";
 		let signature = hex!("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b");
 		let signature = Signature::from_raw(signature);
-		assert!(pair.sign(&message[..]) == signature);
+		assert!(&pair.sign(&message[..]) == &signature);
 		assert!(Pair::verify(&signature, &message[..], &public));
 	}
 
@@ -644,20 +619,16 @@ mod test {
 	fn test_vector_by_string_should_work() {
 		let pair = Pair::from_string(
 			"0x9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
-			None,
-		)
-		.unwrap();
+			None
+		).unwrap();
 		let public = pair.public();
-		assert_eq!(
-			public,
-			Public::from_raw(hex!(
-				"d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
-			))
-		);
+		assert_eq!(public, Public::from_raw(
+			hex!("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+		));
 		let message = b"";
 		let signature = hex!("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b");
 		let signature = Signature::from_raw(signature);
-		assert!(pair.sign(&message[..]) == signature);
+		assert!(&pair.sign(&message[..]) == &signature);
 		assert!(Pair::verify(&signature, &message[..], &public));
 	}
 
@@ -675,12 +646,9 @@ mod test {
 	fn seeded_pair_should_work() {
 		let pair = Pair::from_seed(b"12345678901234567890123456789012");
 		let public = pair.public();
-		assert_eq!(
-			public,
-			Public::from_raw(hex!(
-				"2f8c6129d816cf51c374bc7f08c3e63ed156cf78aefb4a6550d97b87997977ee"
-			))
-		);
+		assert_eq!(public, Public::from_raw(
+			hex!("2f8c6129d816cf51c374bc7f08c3e63ed156cf78aefb4a6550d97b87997977ee")
+		));
 		let message = hex!("2f8c6129d816cf51c374bc7f08c3e63ed156cf78aefb4a6550d97b87997977ee00000000000000000200d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a4500000000000000");
 		let signature = pair.sign(&message[..]);
 		println!("Correct signature: {:?}", signature);
@@ -737,7 +705,7 @@ mod test {
 	#[test]
 	fn signature_serialization_doesnt_panic() {
 		fn deserialize_signature(text: &str) -> Result<Signature, serde_json::error::Error> {
-			serde_json::from_str(text)
+			Ok(serde_json::from_str(text)?)
 		}
 		assert!(deserialize_signature("Not valid json.").is_err());
 		assert!(deserialize_signature("\"Not an actual signature.\"").is_err());

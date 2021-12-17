@@ -19,14 +19,15 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use codec::{Decode, Encode};
+use codec::{Encode, Decode};
 
-#[cfg(feature = "std")]
-use sp_api::ProvideRuntimeApi;
 #[cfg(feature = "std")]
 use sp_runtime::{generic::BlockId, traits::Block as BlockT};
+#[cfg(feature = "std")]
+use sp_api::ProvideRuntimeApi;
 
-use sp_core::{crypto::KeyTypeId, RuntimeDebug};
+use sp_core::RuntimeDebug;
+use sp_core::crypto::KeyTypeId;
 use sp_staking::SessionIndex;
 use sp_std::vec::Vec;
 
@@ -53,7 +54,7 @@ sp_api::decl_runtime_apis! {
 pub type ValidatorCount = u32;
 
 /// Proof of membership of a specific key in a given session.
-#[derive(Encode, Decode, Clone, Eq, PartialEq, Default, RuntimeDebug, scale_info::TypeInfo)]
+#[derive(Encode, Decode, Clone, Eq, PartialEq, Default, RuntimeDebug)]
 pub struct MembershipProof {
 	/// The session index on which the specific key is a member.
 	pub session: SessionIndex,
@@ -112,7 +113,7 @@ pub fn generate_initial_session_keys<Block, T>(
 	client: std::sync::Arc<T>,
 	at: &BlockId<Block>,
 	seeds: Vec<String>,
-) -> Result<(), sp_api::ApiError>
+) -> Result<(), sp_api::ApiErrorFor<T, Block>>
 where
 	Block: BlockT,
 	T: ProvideRuntimeApi<Block>,

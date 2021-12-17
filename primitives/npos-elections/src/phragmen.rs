@@ -33,7 +33,7 @@ use sp_std::prelude::*;
 
 /// The denominator used for loads. Since votes are collected as u64, the smallest ratio that we
 /// might collect is `1/approval_stake` where approval stake is the sum of votes. Hence, some number
-/// bigger than u64::MAX is needed. For maximum accuracy we simply use u128;
+/// bigger than u64::max_value() is needed. For maximum accuracy we simply use u128;
 const DEN: ExtendedBalance = ExtendedBalance::max_value();
 
 /// Execute sequential phragmen with potentially some rounds of `balancing`. The return type is list
@@ -63,21 +63,21 @@ const DEN: ExtendedBalance = ExtendedBalance::max_value();
 /// `expect` this to return `Ok`.
 ///
 /// This can only fail if the normalization fails.
-///
-/// Note that rounding errors can potentially cause the output of this function to fail a t-PJR
-/// check where t is the standard threshold. The underlying algorithm is sound, but the conversions
-/// between numeric types can be lossy.
 pub fn seq_phragmen<AccountId: IdentifierT, P: PerThing128>(
-	to_elect: usize,
-	candidates: Vec<AccountId>,
-	voters: Vec<(AccountId, VoteWeight, Vec<AccountId>)>,
-	balancing: Option<(usize, ExtendedBalance)>,
+	rounds: usize,
+	initial_candidates: Vec<AccountId>,
+	initial_voters: Vec<(AccountId, VoteWeight, Vec<AccountId>)>,
+	balance: Option<(usize, ExtendedBalance)>,
 ) -> Result<ElectionResult<AccountId, P>, crate::Error> {
-	let (candidates, voters) = setup_inputs(candidates, voters);
+	let (candidates, voters) = setup_inputs(initial_candidates, initial_voters);
 
-	let (candidates, mut voters) = seq_phragmen_core::<AccountId>(to_elect, candidates, voters)?;
+	let (candidates, mut voters) = seq_phragmen_core::<AccountId>(
+		rounds,
+		candidates,
+		voters,
+	)?;
 
-	if let Some((iterations, tolerance)) = balancing {
+	if let Some((iterations, tolerance)) = balance {
 		// NOTE: might create zero-edges, but we will strip them again when we convert voter into
 		// assignment.
 		let _iters = balancing::balance::<AccountId>(&mut voters, iterations, tolerance);
@@ -87,7 +87,7 @@ pub fn seq_phragmen<AccountId: IdentifierT, P: PerThing128>(
 		.into_iter()
 		.filter(|c_ptr| c_ptr.borrow().elected)
 		// defensive only: seq-phragmen-core returns only up to rounds.
-		.take(to_elect)
+		.take(rounds)
 		.collect::<Vec<_>>();
 
 	// sort winners based on desirability.
@@ -116,12 +116,12 @@ pub fn seq_phragmen<AccountId: IdentifierT, P: PerThing128>(
 /// This can only fail if the normalization fails.
 // To create the inputs needed for this function, see [`crate::setup_inputs`].
 pub fn seq_phragmen_core<AccountId: IdentifierT>(
-	to_elect: usize,
+	rounds: usize,
 	candidates: Vec<CandidatePtr<AccountId>>,
 	mut voters: Vec<Voter<AccountId>>,
 ) -> Result<(Vec<CandidatePtr<AccountId>>, Vec<Voter<AccountId>>), crate::Error> {
 	// we have already checked that we have more candidates than minimum_candidate_count.
-	let to_elect = to_elect.min(candidates.len());
+	let to_elect = rounds.min(candidates.len());
 
 	// main election loop
 	for round in 0..to_elect {
@@ -148,8 +148,7 @@ pub fn seq_phragmen_core<AccountId: IdentifierT>(
 						voter.load.n(),
 						voter.budget,
 						candidate.approval_stake,
-					)
-					.unwrap_or(Bounded::max_value());
+					).unwrap_or(Bounded::max_value());
 					let temp_d = voter.load.d();
 					let temp = Rational128::from(temp_n, temp_d);
 					candidate.score = candidate.score.lazy_saturating_add(temp);
@@ -185,9 +184,13 @@ pub fn seq_phragmen_core<AccountId: IdentifierT>(
 		for edge in &mut voter.edges {
 			if edge.candidate.borrow().elected {
 				// update internal state.
-				edge.weight = multiply_by_rational(voter.budget, edge.load.n(), voter.load.n())
-					// If result cannot fit in u128. Not much we can do about it.
-					.unwrap_or(Bounded::max_value());
+				edge.weight = multiply_by_rational(
+					voter.budget,
+					edge.load.n(),
+					voter.load.n(),
+				)
+				// If result cannot fit in u128. Not much we can do about it.
+				.unwrap_or(Bounded::max_value());
 			} else {
 				edge.weight = 0
 			}

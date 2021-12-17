@@ -16,25 +16,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::arg_enums::TracingReceiver;
 use sc_service::config::BasePath;
 use std::path::PathBuf;
 use structopt::StructOpt;
+use crate::arg_enums::TracingReceiver;
 
 /// Shared parameters used by all `CoreParams`.
-#[derive(Debug, StructOpt, Clone)]
+#[derive(Debug, StructOpt)]
 pub struct SharedParams {
 	/// Specify the chain specification.
 	///
-	/// It can be one of the predefined ones (dev, local, or staging) or it can be a path to a file
-	/// with the chainspec (such as one exported by the `build-spec` subcommand).
+	/// It can be one of the predefined ones (dev, local, or staging) or it can be a path to a file with
+	/// the chainspec (such as one exported by the `build-spec` subcommand).
 	#[structopt(long, value_name = "CHAIN_SPEC")]
 	pub chain: Option<String>,
 
 	/// Specify the development chain.
-	///
-	/// This flag sets `--chain=dev`, `--force-authoring`, `--rpc-cors=all`,
-	/// `--alice`, and `--tmp` flags, unless explicitly overridden.
 	#[structopt(long, conflicts_with_all = &["chain"])]
 	pub dev: bool,
 
@@ -49,27 +46,17 @@ pub struct SharedParams {
 	#[structopt(short = "l", long, value_name = "LOG_PATTERN")]
 	pub log: Vec<String>,
 
-	/// Enable detailed log output.
-	///
-	/// This includes displaying the log target, log level and thread name.
-	///
-	/// This is automatically enabled when something is logged with any higher level than `info`.
-	#[structopt(long)]
-	pub detailed_log_output: bool,
-
 	/// Disable log color output.
 	#[structopt(long)]
 	pub disable_log_color: bool,
 
-	/// Enable feature to dynamically update and reload the log filter.
+	/// Disable feature to dynamically update and reload the log filter.
 	///
-	/// Be aware that enabling this feature can lead to a performance decrease up to factor six or
-	/// more. Depending on the global logging level the performance decrease changes.
-	///
+	/// By default this feature is enabled, however it leads to a small performance decrease.
 	/// The `system_addLogFilter` and `system_resetLogFilter` RPCs will have no effect with this
-	/// option not being set.
-	#[structopt(long)]
-	pub enable_log_reloading: bool,
+	/// option set.
+	#[structopt(long = "disable-log-reloading")]
+	pub disable_log_reloading: bool,
 
 	/// Sets a custom profiling filter. Syntax is the same as for logging: <target>=<level>
 	#[structopt(long = "tracing-targets", value_name = "TARGETS")]
@@ -101,12 +88,13 @@ impl SharedParams {
 	pub fn chain_id(&self, is_dev: bool) -> String {
 		match self.chain {
 			Some(ref chain) => chain.clone(),
-			None =>
+			None => {
 				if is_dev {
 					"dev".into()
 				} else {
 					"".into()
-				},
+				}
+			}
 		}
 	}
 
@@ -115,19 +103,14 @@ impl SharedParams {
 		&self.log
 	}
 
-	/// Should the detailed log output be enabled.
-	pub fn detailed_log_output(&self) -> bool {
-		self.detailed_log_output
-	}
-
 	/// Should the log color output be disabled?
 	pub fn disable_log_color(&self) -> bool {
 		self.disable_log_color
 	}
 
-	/// Is log reloading enabled
-	pub fn enable_log_reloading(&self) -> bool {
-		self.enable_log_reloading
+	/// Is log reloading disabled
+	pub fn is_log_filter_reloading_disabled(&self) -> bool {
+		self.disable_log_reloading
 	}
 
 	/// Receiver to process tracing messages.

@@ -17,10 +17,12 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 //! Proof utilities
-use crate::{CompactProof, StorageProof};
-use sp_runtime::{generic::BlockId, traits::Block as BlockT};
-use sp_state_machine::{KeyValueStates, KeyValueStorageLevel};
-use sp_storage::ChildInfo;
+use sp_runtime::{
+	generic::BlockId,
+	traits::{Block as BlockT},
+};
+use crate::{StorageProof, ChangesProof};
+use sp_storage::{ChildInfo, StorageKey, PrefixedStorageKey};
 
 /// Interface for providing block proving utilities.
 pub trait ProofProvider<Block: BlockT> {
@@ -28,7 +30,7 @@ pub trait ProofProvider<Block: BlockT> {
 	fn read_proof(
 		&self,
 		id: &BlockId<Block>,
-		keys: &mut dyn Iterator<Item = &[u8]>,
+		keys: &mut dyn Iterator<Item=&[u8]>,
 	) -> sp_blockchain::Result<StorageProof>;
 
 	/// Reads child storage value at a given block + storage_key + key, returning
@@ -37,7 +39,7 @@ pub trait ProofProvider<Block: BlockT> {
 		&self,
 		id: &BlockId<Block>,
 		child_info: &ChildInfo,
-		keys: &mut dyn Iterator<Item = &[u8]>,
+		keys: &mut dyn Iterator<Item=&[u8]>,
 	) -> sp_blockchain::Result<StorageProof>;
 
 	/// Execute a call to a contract on top of state in a block of given hash
@@ -50,44 +52,22 @@ pub trait ProofProvider<Block: BlockT> {
 		method: &str,
 		call_data: &[u8],
 	) -> sp_blockchain::Result<(Vec<u8>, StorageProof)>;
+	/// Reads given header and generates CHT-based header proof.
+	fn header_proof(&self, id: &BlockId<Block>) -> sp_blockchain::Result<(Block::Header, StorageProof)>;
 
-	/// Given a `BlockId` iterate over all storage values starting at `start_keys`.
-	/// Last `start_keys` element contains last accessed key value.
-	/// With multiple `start_keys`, first `start_keys` element is
-	/// the current storage key of of the last accessed child trie.
-	/// at last level the value to start at exclusively.
-	/// Proofs is build until size limit is reached and always include at
-	/// least one key following `start_keys`.
-	/// Returns combined proof and the numbers of collected keys.
-	fn read_proof_collection(
+	/// Get proof for computation of (block, extrinsic) pairs where key has been changed at given blocks range.
+	/// `min` is the hash of the first block, which changes trie root is known to the requester - when we're using
+	/// changes tries from ascendants of this block, we should provide proofs for changes tries roots
+	/// `max` is the hash of the last block known to the requester - we can't use changes tries from descendants
+	/// of this block.
+	/// Works only for runtimes that are supporting changes tries.
+	fn key_changes_proof(
 		&self,
-		id: &BlockId<Block>,
-		start_keys: &[Vec<u8>],
-		size_limit: usize,
-	) -> sp_blockchain::Result<(CompactProof, u32)>;
-
-	/// Given a `BlockId` iterate over all storage values starting at `start_key`.
-	/// Returns collected keys and values.
-	/// Returns the collected keys values content of the top trie followed by the
-	/// collected keys values of child tries.
-	/// Only child tries with their root part of the collected content or
-	/// related to `start_key` are attached.
-	/// For each collected state a boolean indicates if state reach
-	/// end.
-	fn storage_collection(
-		&self,
-		id: &BlockId<Block>,
-		start_key: &[Vec<u8>],
-		size_limit: usize,
-	) -> sp_blockchain::Result<Vec<(KeyValueStorageLevel, bool)>>;
-
-	/// Verify read storage proof for a set of keys.
-	/// Returns collected key-value pairs and a the nested state
-	/// depth of current iteration or 0 if completed.
-	fn verify_range_proof(
-		&self,
-		root: Block::Hash,
-		proof: CompactProof,
-		start_keys: &[Vec<u8>],
-	) -> sp_blockchain::Result<(KeyValueStates, usize)>;
+		first: Block::Hash,
+		last: Block::Hash,
+		min: Block::Hash,
+		max: Block::Hash,
+		storage_key: Option<&PrefixedStorageKey>,
+		key: &StorageKey,
+	) -> sp_blockchain::Result<ChangesProof<Block::Header>>;
 }

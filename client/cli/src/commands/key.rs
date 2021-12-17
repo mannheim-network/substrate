@@ -21,8 +21,11 @@ use crate::{Error, SubstrateCli};
 use structopt::StructOpt;
 
 use super::{
-	generate::GenerateCmd, generate_node_key::GenerateNodeKeyCmd, insert_key::InsertKeyCmd,
-	inspect_key::InspectKeyCmd, inspect_node_key::InspectNodeKeyCmd,
+	insert_key::InsertKeyCmd,
+	inspect_key::InspectKeyCmd,
+	generate::GenerateCmd,
+	inspect_node_key::InspectNodeKeyCmd,
+	generate_node_key::GenerateNodeKeyCmd,
 };
 
 /// Key utilities for the cli.
@@ -36,7 +39,7 @@ pub enum KeySubcommand {
 	Generate(GenerateCmd),
 
 	/// Gets a public key and a SS58 address from the provided Secret URI
-	Inspect(InspectKeyCmd),
+	InspectKey(InspectKeyCmd),
 
 	/// Print the peer ID corresponding to the node key in the given file
 	InspectNodeKey(InspectNodeKeyCmd),
@@ -51,7 +54,7 @@ impl KeySubcommand {
 		match self {
 			KeySubcommand::GenerateNodeKey(cmd) => cmd.run(),
 			KeySubcommand::Generate(cmd) => cmd.run(),
-			KeySubcommand::Inspect(cmd) => cmd.run(),
+			KeySubcommand::InspectKey(cmd) => cmd.run(),
 			KeySubcommand::Insert(cmd) => cmd.run(cli),
 			KeySubcommand::InspectNodeKey(cmd) => cmd.run(),
 		}

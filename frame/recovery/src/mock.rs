@@ -19,16 +19,12 @@
 
 use super::*;
 
-use crate as recovery;
-use frame_support::{
-	parameter_types,
-	traits::{ConstU16, ConstU32, ConstU64, OnFinalize, OnInitialize},
-};
+use frame_support::{parameter_types, traits::{OnInitialize, OnFinalize}};
 use sp_core::H256;
 use sp_runtime::{
-	testing::Header,
-	traits::{BlakeTwo256, IdentityLookup},
+	traits::{BlakeTwo256, IdentityLookup}, testing::Header,
 };
+use crate as recovery;
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -39,19 +35,20 @@ frame_support::construct_runtime!(
 		NodeBlock = Block,
 		UncheckedExtrinsic = UncheckedExtrinsic,
 	{
-		System: frame_system::{Pallet, Call, Config, Storage, Event<T>},
-		Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
-		Recovery: recovery::{Pallet, Call, Storage, Event<T>},
+		System: frame_system::{Module, Call, Config, Storage, Event<T>},
+		Balances: pallet_balances::{Module, Call, Storage, Config<T>, Event<T>},
+		Recovery: recovery::{Module, Call, Storage, Event<T>},
 	}
 );
 
 parameter_types! {
+	pub const BlockHashCount: u64 = 250;
 	pub BlockWeights: frame_system::limits::BlockWeights =
 		frame_system::limits::BlockWeights::simple_max(1024);
 }
 
 impl frame_system::Config for Test {
-	type BaseCallFilter = frame_support::traits::Everything;
+	type BaseCallFilter = ();
 	type BlockWeights = ();
 	type BlockLength = ();
 	type DbWeight = ();
@@ -65,7 +62,7 @@ impl frame_system::Config for Test {
 	type Lookup = IdentityLookup<Self::AccountId>;
 	type Header = Header;
 	type Event = Event;
-	type BlockHashCount = ConstU64<250>;
+	type BlockHashCount = BlockHashCount;
 	type Version = ();
 	type PalletInfo = PalletInfo;
 	type AccountData = pallet_balances::AccountData<u128>;
@@ -73,8 +70,6 @@ impl frame_system::Config for Test {
 	type OnKilledAccount = ();
 	type SystemWeightInfo = ();
 	type SS58Prefix = ();
-	type OnSetCode = ();
-	type MaxConsumers = ConstU32<16>;
 }
 
 parameter_types! {
@@ -83,8 +78,6 @@ parameter_types! {
 
 impl pallet_balances::Config for Test {
 	type MaxLocks = ();
-	type MaxReserves = ();
-	type ReserveIdentifier = [u8; 8];
 	type Balance = u128;
 	type DustRemoval = ();
 	type Event = Event;
@@ -96,6 +89,7 @@ impl pallet_balances::Config for Test {
 parameter_types! {
 	pub const ConfigDepositBase: u64 = 10;
 	pub const FriendDepositFactor: u64 = 1;
+	pub const MaxFriends: u16 = 3;
 	pub const RecoveryDeposit: u64 = 10;
 }
 
@@ -105,7 +99,7 @@ impl Config for Test {
 	type Currency = Balances;
 	type ConfigDepositBase = ConfigDepositBase;
 	type FriendDepositFactor = FriendDepositFactor;
-	type MaxFriends = ConstU16<3>;
+	type MaxFriends = MaxFriends;
 	type RecoveryDeposit = RecoveryDeposit;
 }
 
@@ -116,9 +110,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut t = frame_system::GenesisConfig::default().build_storage::<Test>().unwrap();
 	pallet_balances::GenesisConfig::<Test> {
 		balances: vec![(1, 100), (2, 100), (3, 100), (4, 100), (5, 100)],
-	}
-	.assimilate_storage(&mut t)
-	.unwrap();
+	}.assimilate_storage(&mut t).unwrap();
 	t.into()
 }
 

@@ -6,7 +6,7 @@ construct_runtime! {
 		NodeBlock = Block,
 		UncheckedExtrinsic = UncheckedExtrinsic
 	{
-		System: system::{Pallet},
+		System: system::{Module},
 		Balance: balances::{Error},
 	}
 }

@@ -22,12 +22,15 @@
 #![warn(missing_docs)]
 #![deny(warnings)]
 
+#[cfg(test)]
+mod pallet_version;
+
 /// The configuration trait
 pub trait Config: 'static {
 	/// The runtime origin type.
-	type Origin: codec::Codec + codec::EncodeLike + Default + scale_info::TypeInfo;
+	type Origin: codec::Codec + codec::EncodeLike + Default;
 	/// The block number type.
-	type BlockNumber: codec::Codec + codec::EncodeLike + Default + scale_info::TypeInfo;
+	type BlockNumber: codec::Codec + codec::EncodeLike + Default;
 	/// The information about the pallet setup in the runtime.
 	type PalletInfo: frame_support::traits::PalletInfo;
 	/// The db weights.
@@ -48,30 +51,5 @@ impl frame_support::traits::PalletInfo for PanicPalletInfo {
 	}
 	fn name<P: 'static>() -> Option<&'static str> {
 		unimplemented!("PanicPalletInfo mustn't be triggered by tests");
-	}
-	fn module_name<P: 'static>() -> Option<&'static str> {
-		unimplemented!("PanicPalletInfo mustn't be triggered by tests");
-	}
-	fn crate_version<P: 'static>() -> Option<frame_support::traits::CrateVersion> {
-		unimplemented!("PanicPalletInfo mustn't be triggered by tests");
-	}
-}
-
-/// Provides an implementation of [`frame_support::traits::Randomness`] that should only be used in
-/// tests!
-pub struct TestRandomness<T>(sp_std::marker::PhantomData<T>);
-
-impl<Output: codec::Decode + Default, T> frame_support::traits::Randomness<Output, T::BlockNumber>
-	for TestRandomness<T>
-where
-	T: frame_system::Config,
-{
-	fn random(subject: &[u8]) -> (Output, T::BlockNumber) {
-		use sp_runtime::traits::TrailingZeroInput;
-
-		(
-			Output::decode(&mut TrailingZeroInput::new(subject)).unwrap_or_default(),
-			frame_system::Pallet::<T>::block_number(),
-		)
 	}
 }

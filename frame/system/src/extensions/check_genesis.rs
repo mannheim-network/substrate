@@ -15,22 +15,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Config, Pallet};
-use codec::{Decode, Encode};
-use scale_info::TypeInfo;
+use codec::{Encode, Decode};
+use crate::{Config, Module};
 use sp_runtime::{
-	traits::{DispatchInfoOf, SignedExtension, Zero},
+	traits::{SignedExtension, Zero},
 	transaction_validity::TransactionValidityError,
 };
 
 /// Genesis hash check to provide replay protection between different networks.
-///
-/// # Transaction Validity
-///
-/// Note that while a transaction with invalid `genesis_hash` will fail to be decoded,
-/// the extension does not affect any other fields of `TransactionValidity` directly.
-#[derive(Encode, Decode, Clone, Eq, PartialEq, TypeInfo)]
-#[scale_info(skip_type_params(T))]
+#[derive(Encode, Decode, Clone, Eq, PartialEq)]
 pub struct CheckGenesis<T: Config + Send + Sync>(sp_std::marker::PhantomData<T>);
 
 impl<T: Config + Send + Sync> sp_std::fmt::Debug for CheckGenesis<T> {
@@ -60,16 +53,6 @@ impl<T: Config + Send + Sync> SignedExtension for CheckGenesis<T> {
 	const IDENTIFIER: &'static str = "CheckGenesis";
 
 	fn additional_signed(&self) -> Result<Self::AdditionalSigned, TransactionValidityError> {
-		Ok(<Pallet<T>>::block_hash(T::BlockNumber::zero()))
-	}
-
-	fn pre_dispatch(
-		self,
-		who: &Self::AccountId,
-		call: &Self::Call,
-		info: &DispatchInfoOf<Self::Call>,
-		len: usize,
-	) -> Result<Self::Pre, TransactionValidityError> {
-		Ok(self.validate(who, call, info, len).map(|_| ())?)
+		Ok(<Module<T>>::block_hash(T::BlockNumber::zero()))
 	}
 }

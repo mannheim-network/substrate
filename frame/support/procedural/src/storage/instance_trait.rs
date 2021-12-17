@@ -18,11 +18,11 @@
 //! Implementation of the trait instance and the instance structures implementing it.
 //! (For not instantiable traits there is still the inherent instance implemented).
 
-use super::DeclStorageDefExt;
-use crate::NUMBER_OF_INSTANCE;
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{TokenStream, Span};
 use quote::quote;
+use super::DeclStorageDefExt;
 
+const NUMBER_OF_INSTANCE: usize = 16;
 pub(crate) const INHERENT_INSTANCE_NAME: &str = "__InherentHiddenInstance";
 
 // Used to generate an instance implementation.
@@ -30,34 +30,31 @@ struct InstanceDef {
 	prefix: String,
 	instance_struct: syn::Ident,
 	doc: TokenStream,
-	// Index is same as instance number. Default is 0.
-	index: u8,
 }
 
-pub fn decl_and_impl(def: &DeclStorageDefExt) -> TokenStream {
-	let scrate = &def.hidden_crate;
+pub fn decl_and_impl(scrate: &TokenStream, def: &DeclStorageDefExt) -> TokenStream {
 	let mut impls = TokenStream::new();
 
 	impls.extend(reexport_instance_trait(scrate, def));
 
 	// Implementation of instances.
 	if let Some(module_instance) = &def.module_instance {
-		let instance_defs = (1..=NUMBER_OF_INSTANCE)
+		let instance_defs = (0..NUMBER_OF_INSTANCE)
 			.map(|i| {
 				let name = format!("Instance{}", i);
 				InstanceDef {
 					instance_struct: syn::Ident::new(&name, proc_macro2::Span::call_site()),
 					prefix: name,
 					doc: quote!(#[doc=r"Module instance"]),
-					index: i,
 				}
 			})
-			.chain(module_instance.instance_default.as_ref().map(|ident| InstanceDef {
-				prefix: String::new(),
-				instance_struct: ident.clone(),
-				doc: quote!(#[doc=r"Default module instance"]),
-				index: 0,
-			}));
+			.chain(
+				module_instance.instance_default.as_ref().map(|ident| InstanceDef {
+					prefix: String::new(),
+					instance_struct: ident.clone(),
+					doc: quote!(#[doc=r"Default module instance"]),
+				})
+			);
 
 		for instance_def in instance_defs {
 			impls.extend(create_and_impl_instance_struct(scrate, &instance_def, def));
@@ -68,8 +65,8 @@ pub fn decl_and_impl(def: &DeclStorageDefExt) -> TokenStream {
 	let inherent_instance = syn::Ident::new(INHERENT_INSTANCE_NAME, Span::call_site());
 
 	// Implementation of inherent instance.
-	if let Some(default_instance) =
-		def.module_instance.as_ref().and_then(|i| i.instance_default.as_ref())
+	if let Some(default_instance) = def.module_instance.as_ref()
+		.and_then(|i| i.instance_default.as_ref())
 	{
 		impls.extend(quote! {
 			/// Hidden instance generated to be internally used when module is used without
@@ -86,8 +83,6 @@ pub fn decl_and_impl(def: &DeclStorageDefExt) -> TokenStream {
 				/// instance.
 				#[doc(hidden)]
 			),
-			// This is just to make the type system happy. Not actually used.
-			index: 0,
 		};
 		impls.extend(create_and_impl_instance_struct(scrate, &instance_def, def));
 	}
@@ -95,7 +90,10 @@ pub fn decl_and_impl(def: &DeclStorageDefExt) -> TokenStream {
 	impls
 }
 
-fn reexport_instance_trait(scrate: &TokenStream, def: &DeclStorageDefExt) -> TokenStream {
+fn reexport_instance_trait(
+	scrate: &TokenStream,
+	def: &DeclStorageDefExt,
+) -> TokenStream {
 	if let Some(i) = def.module_instance.as_ref() {
 		let instance_trait = &i.instance_trait;
 		quote!(
@@ -118,7 +116,6 @@ fn create_and_impl_instance_struct(
 	let instance_struct = &instance_def.instance_struct;
 	let prefix = format!("{}{}", instance_def.prefix, def.crate_name.to_string());
 	let doc = &instance_def.doc;
-	let index = instance_def.index;
 
 	quote! {
 		// Those trait are derived because of wrong bounds for generics
@@ -126,14 +123,12 @@ fn create_and_impl_instance_struct(
 			Clone, Eq, PartialEq,
 			#scrate::codec::Encode,
 			#scrate::codec::Decode,
-			#scrate::scale_info::TypeInfo,
 			#scrate::RuntimeDebug,
 		)]
 		#doc
 		pub struct #instance_struct;
 		impl #instance_trait for #instance_struct {
 			const PREFIX: &'static str = #prefix;
-			const INDEX: u8 = #index;
 		}
 	}
 }

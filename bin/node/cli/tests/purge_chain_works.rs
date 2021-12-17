@@ -22,12 +22,12 @@ use tempfile::tempdir;
 
 pub mod common;
 
-#[tokio::test]
+#[test]
 #[cfg(unix)]
-async fn purge_chain_works() {
+fn purge_chain_works() {
 	let base_path = tempdir().expect("could not create a temp dir");
 
-	common::run_node_for_a_while(base_path.path(), &["--dev"]).await;
+	common::run_dev_node_for_a_while(base_path.path());
 
 	let status = Command::new(cargo_bin("substrate"))
 		.args(&["purge-chain", "--dev", "-d"])
@@ -39,5 +39,5 @@ async fn purge_chain_works() {
 
 	// Make sure that the `dev` chain folder exists, but the `db` is deleted.
 	assert!(base_path.path().join("chains/dev/").exists());
-	assert!(!base_path.path().join("chains/dev/db/full").exists());
+	assert!(!base_path.path().join("chains/dev/db").exists());
 }

@@ -16,10 +16,8 @@
 // limitations under the License.
 
 use frame_support::{
-	assert_noop, assert_ok,
-	dispatch::{DispatchError, DispatchResult},
-	storage::{with_transaction, TransactionOutcome::*},
-	transactional, StorageMap, StorageValue,
+	assert_ok, assert_noop, transactional, StorageMap, StorageValue,
+	dispatch::{DispatchError, DispatchResult}, storage::{with_transaction, TransactionOutcome::*},
 };
 use sp_io::TestExternalities;
 use sp_std::result;
@@ -43,7 +41,7 @@ frame_support::decl_module! {
 	}
 }
 
-frame_support::decl_storage! {
+frame_support::decl_storage!{
 	trait Store for Module<T: Config> as StorageTransactions {
 		pub Value: u32;
 		pub Map: map hasher(twox_64_concat) String => u32;
@@ -64,6 +62,7 @@ impl Config for Runtime {}
 #[test]
 fn storage_transaction_basic_commit() {
 	TestExternalities::default().execute_with(|| {
+
 		assert_eq!(Value::get(), 0);
 		assert!(!Map::contains_key("val0"));
 
@@ -83,6 +82,7 @@ fn storage_transaction_basic_commit() {
 #[test]
 fn storage_transaction_basic_rollback() {
 	TestExternalities::default().execute_with(|| {
+
 		assert_eq!(Value::get(), 0);
 		assert_eq!(Map::get("val0"), 0);
 

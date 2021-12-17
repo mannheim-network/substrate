@@ -5,7 +5,7 @@ mod pallet {
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
-		type Bar: scale_info::TypeInfo;
+		type Bar;
 	}
 
 	#[pallet::pallet]
@@ -17,7 +17,7 @@ mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::weight(0)]
-		pub fn foo(origin: OriginFor<T>, bar: T::Bar) -> DispatchResultWithPostInfo {
+		fn foo(origin: OriginFor<T>, bar: T::Bar) -> DispatchResultWithPostInfo {
 			Ok(().into())
 		}
 	}

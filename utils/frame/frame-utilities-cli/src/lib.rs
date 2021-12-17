@@ -17,6 +17,7 @@
 
 //! frame-system CLI utilities
 
-mod pallet_id;
+mod module_id;
 
-pub use pallet_id::PalletIdCmd;
+pub use module_id::ModuleIdCmd;
+

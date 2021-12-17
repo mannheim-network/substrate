@@ -15,7 +15,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use codec::{Decode, Encode};
+use codec::{Encode, Decode};
 use sp_core::RuntimeDebug;
 use sp_std::vec::Vec;
 
@@ -32,14 +32,6 @@ pub enum RuntimeString {
 	Owned(Vec<u8>),
 }
 
-impl scale_info::TypeInfo for RuntimeString {
-	type Identity = str;
-
-	fn type_info() -> scale_info::Type {
-		Self::Identity::type_info()
-	}
-}
-
 /// Convenience macro to use the format! interface to get a `RuntimeString::Owned`
 #[macro_export]
 macro_rules! format_runtime_string {
@@ -54,6 +46,7 @@ macro_rules! format_runtime_string {
 		}
 	}};
 }
+
 
 impl From<&'static str> for RuntimeString {
 	fn from(data: &'static str) -> Self {
@@ -88,18 +81,6 @@ impl AsRef<[u8]> for RuntimeString {
 		match self {
 			Self::Borrowed(val) => val.as_ref(),
 			Self::Owned(val) => val.as_ref(),
-		}
-	}
-}
-
-#[cfg(feature = "std")]
-impl std::ops::Deref for RuntimeString {
-	type Target = str;
-
-	fn deref(&self) -> &str {
-		match self {
-			Self::Borrowed(val) => &val,
-			Self::Owned(val) => &val,
 		}
 	}
 }
@@ -149,7 +130,5 @@ impl<'de> serde::Deserialize<'de> for RuntimeString {
 /// Create a const [`RuntimeString`].
 #[macro_export]
 macro_rules! create_runtime_str {
-	( $y:expr ) => {{
-		$crate::RuntimeString::Borrowed($y)
-	}};
+	( $y:expr ) => {{ $crate::RuntimeString::Borrowed($y) }}
 }

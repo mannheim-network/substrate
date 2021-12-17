@@ -9,5 +9,3 @@ frame_support::decl_module! {
 		}
 	}
 }
-
-fn main() {}

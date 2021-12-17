@@ -44,8 +44,11 @@ where
 	H: Clone + Debug + Eq,
 {
 	fn get(&self) -> (u64, HashSet<AuthorityId>) {
-		let current_voters: HashSet<AuthorityId> =
-			self.current_authorities().iter().map(|p| p.0.clone()).collect();
+		let current_voters: HashSet<AuthorityId> = self
+			.current_authorities()
+			.iter()
+			.map(|p| p.0.clone())
+			.collect();
 
 		(self.set_id(), current_voters)
 	}
@@ -87,6 +90,8 @@ impl RoundState {
 		round_state: &report::RoundState<AuthorityId>,
 		voters: &HashSet<AuthorityId>,
 	) -> Result<Self, Error> {
+		use std::convert::TryInto;
+
 		let prevotes = &round_state.prevote_ids;
 		let missing_prevotes = voters.difference(&prevotes).cloned().collect();
 
@@ -128,6 +133,8 @@ impl ReportedRoundStates {
 		AuthoritySet: ReportAuthoritySet,
 		VoterState: ReportVoterState,
 	{
+		use std::convert::TryFrom;
+
 		let voter_state = voter_state.get().ok_or(Error::EndpointNotReady)?;
 
 		let (set_id, current_voters) = authority_set.get();
@@ -145,6 +152,10 @@ impl ReportedRoundStates {
 			.map(|(round, round_state)| RoundState::from(*round, round_state, &current_voters))
 			.collect::<Result<Vec<_>, Error>>()?;
 
-		Ok(Self { set_id, best, background })
+		Ok(Self {
+			set_id,
+			best,
+			background,
+		})
 	}
 }

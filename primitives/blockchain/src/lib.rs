@@ -18,9 +18,9 @@
 //! Substrate blockchain traits and primitives.
 
 mod backend;
-mod error;
 mod header_metadata;
+mod error;
 
-pub use backend::*;
 pub use error::*;
+pub use backend::*;
 pub use header_metadata::*;

@@ -18,9 +18,9 @@
 //! Implementation of the `generate-node-key` subcommand
 
 use crate::Error;
-use libp2p::identity::{ed25519 as libp2p_ed25519, PublicKey};
-use std::{fs, path::PathBuf};
 use structopt::StructOpt;
+use std::{path::PathBuf, fs};
+use libp2p::identity::{ed25519 as libp2p_ed25519, PublicKey};
 
 /// The `generate-node-key` command
 #[derive(Debug, StructOpt)]
@@ -42,7 +42,7 @@ impl GenerateNodeKeyCmd {
 	pub fn run(&self) -> Result<(), Error> {
 		let keypair = libp2p_ed25519::Keypair::generate();
 		let secret = keypair.secret();
-		let peer_id = PublicKey::Ed25519(keypair.public()).to_peer_id();
+		let peer_id = PublicKey::Ed25519(keypair.public()).into_peer_id();
 		let secret_hex = hex::encode(secret.as_ref());
 
 		match &self.file {
@@ -59,14 +59,15 @@ impl GenerateNodeKeyCmd {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use std::io::Read;
 	use tempfile::Builder;
+	use std::io::Read;
 
 	#[test]
 	fn generate_node_key() {
 		let mut file = Builder::new().prefix("keyfile").tempfile().unwrap();
 		let file_path = file.path().display().to_string();
-		let generate = GenerateNodeKeyCmd::from_iter(&["generate-node-key", "--file", &file_path]);
+		let generate =
+			GenerateNodeKeyCmd::from_iter(&["generate-node-key", "--file", &file_path]);
 		assert!(generate.run().is_ok());
 		let mut buf = String::new();
 		assert!(file.read_to_string(&mut buf).is_ok());

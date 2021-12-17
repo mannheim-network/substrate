@@ -17,13 +17,11 @@
 
 //! Migrations for the AURA pallet.
 
-use frame_support::{pallet_prelude::*, traits::Get, weights::Weight};
+use frame_support::{traits::Get, weights::Weight, pallet_prelude::*};
 
 struct __LastTimestamp<T>(sp_std::marker::PhantomData<T>);
 impl<T: RemoveLastTimestamp> frame_support::traits::StorageInstance for __LastTimestamp<T> {
-	fn pallet_prefix() -> &'static str {
-		T::PalletPrefix::get()
-	}
+	fn pallet_prefix() -> &'static str { T::PalletPrefix::get() }
 	const STORAGE_PREFIX: &'static str = "LastTimestamp";
 }
 

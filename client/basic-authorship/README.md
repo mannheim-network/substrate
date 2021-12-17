@@ -20,6 +20,7 @@ let future = proposer.propose(
 	Default::default(),
 	Default::default(),
 	Duration::from_secs(2),
+	RecordProof::Yes,
 );
 
 // We wait until the proposition is performed.

@@ -252,7 +252,7 @@ pub mod pallet {
 		/// that the runtime should know about the prefix in order to make use of it as
 		/// an identifier of the chain.
 		#[pallet::constant]
-		type SS58Prefix: Get<u8>;
+		type SS58Prefix: Get<u16>;
 	}
 
 	#[pallet::pallet]
